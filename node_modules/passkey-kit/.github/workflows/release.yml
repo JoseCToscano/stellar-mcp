@@ -1,0 +1,21 @@
+name: Contract Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: 'Unique release name'
+        required: true
+        type: string
+
+jobs:
+
+  release-contract-smart-wallet:
+      uses: stellar-expert/soroban-build-workflow/.github/workflows/release.yml@main
+      with:
+        release_name: ${{ github.ref_name }}
+        release_description: 'Release of the smart wallet contract'
+        relative_path: 'contracts'
+        package: 'smart-wallet'
+      secrets:
+        release_token: ${{ secrets.GITHUB_TOKEN }}

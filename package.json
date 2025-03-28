@@ -1,0 +1,38 @@
+{
+  "name": "stellar-mcp",
+  "version": "1.0.0",
+  "description": "Stellar's MCP Server",
+  "homepage": "https://github.com/JoseCToscano/stellar-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/JoseCToscano/stellar-mcp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoseCToscano/stellar-mcp.git"
+  },
+  "license": "ISC",
+  "author": "Jose Toscano",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start:dev": "NODE_OPTIONS='--loader ts-node/esm' ts-node --esm",
+    "build": "tsx build.ts && chmod 755 build/mcp-server.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.8.0",
+    "@stellar/stellar-sdk": "^13.1.0",
+    "dotenv": "^16.4.7",
+    "passkey-kit": "^0.10.19",
+    "sac-sdk": "^0.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "prettier": "^3.5.3",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
