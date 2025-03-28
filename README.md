@@ -73,6 +73,47 @@ WALLET_WASM_HASH=your_wallet_wasm_hash
 npm run start:dev src/mcp-server.ts
 ```
 
+### Connecting through Claude Desktop
+
+To connect the MCP server to Claude Desktop, add the following configuration to your Claude Desktop config file (usually located at `~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "servers": {
+    "stellar-mcp": {
+      "command": "node",
+      "args": ["/path/to/your/stellar-mcp/build/mcp-server.js"],
+      "env": {
+        "LAUNCHTUBE_URL": "https://testnet.launchtube.xyz",
+        "LAUNCHTUBE_JWT": "your_launchtube_jwt",
+        "AGENT_KEYPAIR_FILE_PATH": "/path/to/your/stellar-mcp/agent-keys.txt",
+        "SAC_GUIDE_FILE_PATH": "/path/to/your/stellar-mcp/STELLAR_TOKENS_SAC.md",
+        "USAGE_GUIDE_FILE_PATH": "/path/to/your/stellar-mcp/USAGE.md",
+        "WALLET_WASM_HASH": "a8860280cb9f9335b623f81a4e80e89a7920024275b177f2d4bffa6aa5fb5606",
+        "RPC_URL": "https://soroban-testnet.stellar.org",
+        "NETWORK_PASSPHRASE": "Test SDF Network ; September 2015",
+        "MERCURY_JWT": "your_mercury_jwt",
+        "MERCURY_URL": "https://api.mercurydata.app",
+        "MERCURY_PROJECT_NAME": "your_mercury_project_name"
+      }
+    }
+  }
+}
+```
+
+Make sure to:
+
+1. Replace `/path/to/your/` with your actual project path
+2. Obtain the necessary API keys and tokens:
+   - `LAUNCHTUBE_JWT`: From [Launchtube](https://testnet.launchtube.xyz)
+   - `MERCURY_JWT`: From [Mercury Data](https://api.mercurydata.app)
+3. Create the required files:
+   - `agent-keys.txt`: For storing AI agent's Stellar keypair
+   - `STELLAR_TOKENS_SAC.md`: Token directory (provided)
+   - `USAGE.md`: Usage guidelines
+
+After adding the configuration, restart Claude Desktop for the changes to take effect.
+
 ## Usage Examples
 
 ### 1. Creating a New Stellar Account

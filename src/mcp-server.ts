@@ -32,6 +32,7 @@ const server = new McpServer({
 
 const AGENT_KEYPAIR_FILE_PATH = process.env.AGENT_KEYPAIR_FILE_PATH;
 const USAGE_GUIDE_FILE_PATH = process.env.USAGE_GUIDE_FILE_PATH;
+const SAC_GUIDE_FILE_PATH = process.env.SAC_GUIDE_FILE_PATH;
 
 if (AGENT_KEYPAIR_FILE_PATH) {
   // Register agent_keys.txt
@@ -58,6 +59,18 @@ if (USAGE_GUIDE_FILE_PATH) {
     readMarkdownResource
   );
 }
+
+// Register SAC guide
+server.resource(
+  'Stellar Tokens SAC Guide',
+  `file:///${SAC_GUIDE_FILE_PATH}`,
+  {
+    description:
+      'Guide for interacting with Stellar Asset Contracts (SAC) through the MCP server',
+    mimeType: 'text/markdown',
+  },
+  readMarkdownResource
+);
 
 server.tool('create-account', 'Create a new Stellar account.', {}, async () => {
   try {
