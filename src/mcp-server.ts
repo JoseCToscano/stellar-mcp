@@ -238,16 +238,17 @@ server.tool(
       );
       const result = sacClient.txFromXDR(transactionXdr);
 
-      const { shouldSignWithSigner, walletContractId } =
-        await shouldSignWithWalletSigner(result, contractId);
+      let isReadCall = false;
+      try {
+        // Simulation is necessary to obtain some insights about the transaction
+        await result.simulate();
+        isReadCall = result.isReadCall;
+      } catch (e) {
+        // Ignore simulation errors
+      }
 
-      // Signing with a passkey wallet
-      if (shouldSignWithSigner && walletContractId) {
-        const passkeyWallet = getPasskeyWallet(walletContractId);
-        const signedTx = await passkeyWallet.sign(transactionXdr, {
-          keypair,
-        });
-        const res = await passkeyServer.send(signedTx);
+      if (isReadCall) {
+        const res = await submitToLaunchtube(result.toXDR());
         const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
         const parsedResult = scValToNative(
           meta.v3().sorobanMeta()!.returnValue()
@@ -264,6 +265,55 @@ server.tool(
             },
           ],
         };
+      }
+
+      const { shouldSignWithSigner, walletContractId } =
+        await shouldSignWithWalletSigner(result, contractId);
+
+      // Signing with a passkey wallet
+      if (shouldSignWithSigner && walletContractId) {
+        const passkeyWallet = getPasskeyWallet(walletContractId);
+        const signedTx = await passkeyWallet.sign(transactionXdr, {
+          keypair,
+        });
+        try {
+          const res = await passkeyServer.send(signedTx);
+          const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
+          const parsedResult = scValToNative(
+            meta.v3().sorobanMeta()!.returnValue()
+          );
+          return {
+            content: [
+              {
+                type: 'text',
+                text: 'Transaction sent successfully!',
+              },
+              {
+                type: 'text',
+                text: JSON.stringify(parsedResult),
+              },
+            ],
+          };
+        } catch (e) {
+          let invalidAuth = false;
+          if (
+            (e as { error?: string })?.error?.includes(
+              'Error(Auth, InvalidAction)'
+            )
+          ) {
+            invalidAuth = true;
+          }
+          return {
+            content: [
+              {
+                type: 'text',
+                text: invalidAuth
+                  ? 'Transaction failed: Insufficient permissions to execute the transaction'
+                  : 'Transaction failed',
+              },
+            ],
+          };
+        }
       }
       // Signing with a regular Stellar wallet
       const server = new rpc.Server(process.env.RPC_URL!, {
@@ -284,9 +334,6 @@ server.tool(
           );
         },
       });
-
-      // Simulation is necessary
-      await result.simulate();
 
       // Now sign the transaction envelope
       await result.sign({
@@ -343,7 +390,6 @@ async function main() {
     // Initialize MCP transport
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    server.resource;
   } catch (error) {
     throw error;
   }

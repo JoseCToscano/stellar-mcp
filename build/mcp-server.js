@@ -1543,13 +1543,14 @@ server.tool(
         process.env.RPC_URL
       );
       const result = sacClient.txFromXDR(transactionXdr);
-      const { shouldSignWithSigner, walletContractId } = await shouldSignWithWalletSigner(result, contractId);
-      if (shouldSignWithSigner && walletContractId) {
-        const passkeyWallet = getPasskeyWallet(walletContractId);
-        const signedTx = await passkeyWallet.sign(transactionXdr, {
-          keypair
-        });
-        const res2 = await passkeyServer.send(signedTx);
+      let isReadCall = false;
+      try {
+        await result.simulate();
+        isReadCall = result.isReadCall;
+      } catch (e) {
+      }
+      if (isReadCall) {
+        const res2 = await submitToLaunchtube(result.toXDR());
         const meta2 = xdr3.TransactionMeta.fromXDR(res2.resultMetaXdr, "base64");
         const parsedResult2 = scValToNative(
           meta2.v3().sorobanMeta().returnValue()
@@ -1567,6 +1568,47 @@ server.tool(
           ]
         };
       }
+      const { shouldSignWithSigner, walletContractId } = await shouldSignWithWalletSigner(result, contractId);
+      if (shouldSignWithSigner && walletContractId) {
+        const passkeyWallet = getPasskeyWallet(walletContractId);
+        const signedTx = await passkeyWallet.sign(transactionXdr, {
+          keypair
+        });
+        try {
+          const res2 = await passkeyServer.send(signedTx);
+          const meta2 = xdr3.TransactionMeta.fromXDR(res2.resultMetaXdr, "base64");
+          const parsedResult2 = scValToNative(
+            meta2.v3().sorobanMeta().returnValue()
+          );
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Transaction sent successfully!"
+              },
+              {
+                type: "text",
+                text: JSON.stringify(parsedResult2)
+              }
+            ]
+          };
+        } catch (e) {
+          let invalidAuth = false;
+          if (e?.error?.includes(
+            "Error(Auth, InvalidAction)"
+          )) {
+            invalidAuth = true;
+          }
+          return {
+            content: [
+              {
+                type: "text",
+                text: invalidAuth ? "Transaction failed: Insufficient permissions to execute the transaction" : "Transaction failed"
+              }
+            ]
+          };
+        }
+      }
       const server2 = new rpc.Server(process.env.RPC_URL, {
         allowHttp: true
       });
@@ -1583,7 +1625,6 @@ server.tool(
           );
         }
       });
-      await result.simulate();
       await result.sign({
         signTransaction: basicNodeSigner2(
           keypair,
@@ -1634,7 +1675,6 @@ async function main() {
   try {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    server.resource;
   } catch (error) {
     throw error;
   }
