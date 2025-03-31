@@ -1,6 +1,6 @@
 {
   "name": "stellar-mcp-server",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "description": "Stellar's MCP Server",
   "homepage": "https://github.com/JoseCToscano/stellar-mcp#readme",
   "bugs": {
