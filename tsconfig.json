@@ -18,8 +18,9 @@
     }
   },
   "include": [
-    "src/**/*",
+    "src/mcp-server.ts",
+    "src/utils.ts",
     "node_modules/sac-sdk/src/**/*"
   ],
   "exclude": ["node_modules/**/*", "!node_modules/sac-sdk/**/*"]
-} 
+}

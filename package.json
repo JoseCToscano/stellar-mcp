@@ -1,10 +1,13 @@
 {
-  "name": "stellar-mcp",
-  "version": "1.0.0",
+  "name": "stellar-mcp-server",
+  "version": "0.0.2",
   "description": "Stellar's MCP Server",
   "homepage": "https://github.com/JoseCToscano/stellar-mcp#readme",
   "bugs": {
     "url": "https://github.com/JoseCToscano/stellar-mcp/issues"
+  },
+  "bin": {
+    "stellar-mcp-server": "./build/mcp-server.js"
   },
   "repository": {
     "type": "git",

@@ -17,6 +17,9 @@ You’ve been assigned a Stellar Signer account located in the `agent-keys.json`
 
 ---
 
+Note that useful Stellar Asset Contracts are listed on the USAGE resource. Refer to it when looking for one:
+XLM's is CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+
 ## 🛠️ Available Tools
 
 You can use the following tools to interact with the Stellar Testnet:
@@ -26,7 +29,8 @@ You can use the following tools to interact with the Stellar Testnet:
 **Description:**  
 Generate a brand new Stellar keypair.
 
-**Returns:**  
+**Returns:**
+
 ```json
 {
   "publicKey": "G...",
@@ -35,8 +39,8 @@ Generate a brand new Stellar keypair.
 ```
 
 2. fund-account
-**Description:**
-Fund any Stellar address using the Friendbot on the testnet.
+   **Description:**
+   Fund any Stellar address using the Friendbot on the testnet.
 
 Input:
 
@@ -46,8 +50,8 @@ Returns:
 Confirmation that the account was funded.
 
 3. get-account
-**Description:**
-Retrieve key information about a Stellar account.
+   **Description:**
+   Retrieve key information about a Stellar account.
 
 Input:
 
@@ -64,8 +68,8 @@ Balances
 Signers
 
 4. get-transactions
-**Description:**
-Fetch a list of recent transactions for a Stellar account.
+   **Description:**
+   Fetch a list of recent transactions for a Stellar account.
 
 Input:
 
@@ -75,8 +79,8 @@ Returns:
 Transaction history from Horizon.
 
 5. sign-and-submit-transaction
-**Description:**
-Sign and submit a Soroban smart contract transaction.
+   **Description:**
+   Sign and submit a Soroban smart contract transaction.
 
 Input:
 
@@ -103,7 +107,7 @@ Use get-account and get-transactions to monitor your account
 When you need to interact with a smart contract:
 
 When calling any stellar related tool, most of the times you'll get a signed XDR and instructions on how to sign it
-If signature is required use __sign-and-submit-transaction__ with your secretKey. Remember to also use the contract id
+If signature is required use **sign-and-submit-transaction** with your secretKey. Remember to also use the contract id
 
 Keep the publicKey for all read-only operations
 

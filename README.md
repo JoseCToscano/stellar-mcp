@@ -70,7 +70,8 @@ WALLET_WASM_HASH=your_wallet_wasm_hash
 ### Running the Server
 
 ```bash
-npm run start:dev src/mcp-server.ts
+npm run build
+node build/mcp-server.js
 ```
 
 ### Connecting through Claude Desktop

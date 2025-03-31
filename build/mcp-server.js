@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -1366,7 +1367,7 @@ var server = new McpServer({
 });
 var AGENT_KEYPAIR_FILE_PATH = process.env.AGENT_KEYPAIR_FILE_PATH;
 var USAGE_GUIDE_FILE_PATH = process.env.USAGE_GUIDE_FILE_PATH;
-var SAC_GUIDE_FILE_PATH = "STELLAR_TOKENS_SAC.md";
+var SAC_GUIDE_FILE_PATH = process.env.SAC_GUIDE_FILE_PATH;
 if (AGENT_KEYPAIR_FILE_PATH) {
   server.resource(
     "Agent Keys",
