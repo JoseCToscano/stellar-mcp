@@ -25,10 +25,7 @@ import {
 const server = new McpServer({
   name: 'stellar-mcp',
   version: '1.0.0',
-  capabilities: {
-    resources: {},
-    tools: {},
-  },
+  capabilities: { resources: {}, tools: {} },
 });
 
 const AGENT_KEYPAIR_FILE_PATH = process.env.AGENT_KEYPAIR_FILE_PATH;
@@ -40,10 +37,7 @@ if (AGENT_KEYPAIR_FILE_PATH) {
   server.resource(
     'Agent Keys',
     `file:///${AGENT_KEYPAIR_FILE_PATH}`,
-    {
-      description: 'Stellar keypair for the AI Agent',
-      mimeType: 'text/plain',
-    },
+    { description: 'Stellar keypair for the AI Agent', mimeType: 'text/plain' },
     readTxtResource
   );
 }
@@ -82,10 +76,7 @@ server.tool('create-account', 'Create a new Stellar account.', {}, async () => {
         {
           type: 'text',
           text: JSON.stringify(
-            {
-              publicKey: keypair.publicKey(),
-              secretKey: keypair.secret(),
-            },
+            { publicKey: keypair.publicKey(), secretKey: keypair.secret() },
             null,
             2
           ),
@@ -94,9 +85,7 @@ server.tool('create-account', 'Create a new Stellar account.', {}, async () => {
     };
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 404) {
-      return {
-        content: [{ type: 'text', text: `Error creating account` }],
-      };
+      return { content: [{ type: 'text', text: `Error creating account` }] };
     }
     throw error; // Let MCP handle other errors
   }
@@ -105,9 +94,7 @@ server.tool('create-account', 'Create a new Stellar account.', {}, async () => {
 server.tool(
   'fund-account',
   'Fund a Stellar account with testnet lumens.',
-  {
-    address: z.string().describe('The Stellar address to fund'),
-  },
+  { address: z.string().describe('The Stellar address to fund') },
   async ({ address }) => {
     try {
       await fetch(`https://friendbot.stellar.org?addr=${address}`)
@@ -121,9 +108,7 @@ server.tool(
           {
             type: 'text',
             text: JSON.stringify(
-              {
-                message: 'Account funded successfully',
-              },
+              { message: 'Account funded successfully' },
               null,
               2
             ),
@@ -145,9 +130,7 @@ server.tool(
 server.tool(
   'get-account',
   'Fetch a minimal set of current info about a Stellar account.',
-  {
-    address: z.string().describe('The Stellar address to fetch info for'),
-  },
+  { address: z.string().describe('The Stellar address to fetch info for') },
   async ({ address }) => {
     try {
       const horizonServer = new Horizon.Server(
@@ -201,12 +184,7 @@ server.tool(
         .forAccount(address)
         .call();
       return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(transactions),
-          },
-        ],
+        content: [{ type: 'text', text: JSON.stringify(transactions) }],
       };
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 404) {
@@ -269,14 +247,8 @@ server.tool(
         );
         return {
           content: [
-            {
-              type: 'text',
-              text: 'Transaction sent successfully!',
-            },
-            {
-              type: 'text',
-              text: JSON.stringify(parsedResult),
-            },
+            { type: 'text', text: 'Transaction sent successfully!' },
+            { type: 'text', text: JSON.stringify(parsedResult) },
           ],
         };
       }
@@ -287,9 +259,7 @@ server.tool(
       // Signing with a passkey wallet
       if (shouldSignWithSigner && walletContractId) {
         const passkeyWallet = getPasskeyWallet(walletContractId);
-        const signedTx = await passkeyWallet.sign(transactionXdr, {
-          keypair,
-        });
+        const signedTx = await passkeyWallet.sign(transactionXdr, { keypair });
         try {
           const res = await passkeyServer.send(signedTx);
           const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
@@ -298,14 +268,8 @@ server.tool(
           );
           return {
             content: [
-              {
-                type: 'text',
-                text: 'Transaction sent successfully!',
-              },
-              {
-                type: 'text',
-                text: JSON.stringify(parsedResult),
-              },
+              { type: 'text', text: 'Transaction sent successfully!' },
+              { type: 'text', text: JSON.stringify(parsedResult) },
             ],
           };
         } catch (e) {
@@ -330,9 +294,7 @@ server.tool(
         }
       }
       // Signing with a regular Stellar wallet
-      const server = new rpc.Server(process.env.RPC_URL!, {
-        allowHttp: true,
-      });
+      const server = new rpc.Server(process.env.RPC_URL!, { allowHttp: true });
 
       const ledgerSeq = (await server.getLatestLedger()).sequence;
       const validUntilLedger = ledgerSeq + 100;
@@ -365,14 +327,8 @@ server.tool(
       );
       return {
         content: [
-          {
-            type: 'text',
-            text: 'Transaction sent successfully!',
-          },
-          {
-            type: 'text',
-            text: JSON.stringify(parsedResult),
-          },
+          { type: 'text', text: 'Transaction sent successfully!' },
+          { type: 'text', text: JSON.stringify(parsedResult) },
         ],
       };
     } catch (error) {
@@ -395,6 +351,40 @@ server.tool(
         };
       }
       throw error;
+    }
+  }
+);
+
+server.tool(
+  'submit-signed-xdr',
+  'Submit a signed XDR transaction to the Stellar network.',
+  { xdr: z.string().describe('The signed XDR transaction to submit') },
+  async ({ xdr }) => {
+    try {
+      const res = await submitToLaunchtube(xdr);
+      const meta = res.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
+      const parsedResult = scValToNative(
+        meta.v3().sorobanMeta()!.returnValue()
+      );
+      return {
+        content: [
+          { type: 'text', text: 'Transaction submitted successfully!' },
+          { type: 'text', text: JSON.stringify(parsedResult) },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Transaction failed',
+              message: error instanceof Error ? error.message : 'Unknown error',
+              details: error,
+            }),
+          },
+        ],
+      };
     }
   }
 );
