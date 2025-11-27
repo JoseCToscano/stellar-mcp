@@ -1,0 +1,66 @@
+[package]
+name = "stellar-mcp-generator"
+version = "0.1.0"
+edition = "2021"
+authors = ["Stellar MCP Team"]
+description = "A Stellar CLI plugin to generate MCP servers from Soroban contract specs"
+license = "Apache-2.0"
+repository = "https://github.com/stellar/stellar-mcp-generator"
+readme = "README.md"
+rust-version = "1.85"
+keywords = ["stellar-cli-plugin", "stellar", "soroban", "mcp"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+debug = true
+opt-level = 0
+
+[dependencies]
+# CLI framework
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# Stellar SDK and RPC
+stellar-rpc-client = "23.0"
+stellar-xdr = { version = "23.0", features = ["curr", "std"] }
+soroban-spec-tools = "23.2"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.22"
+
+# Template engine
+handlebars = "6.0"
+
+# File system utilities
+walkdir = "2.5"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# HTTP client for RPC
+reqwest = { version = "0.12", features = ["json"] }
+
+# Hex encoding
+hex = "0.4"
+
+# Base32 encoding (for strkey)
+base32 = "0.5"
+
+[lib]
+name = "stellar_mcp_generator"
+path = "src/lib.rs"
+
+[[bin]]
+name = "stellar-mcp"
+path = "src/main.rs"

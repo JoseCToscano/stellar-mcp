@@ -1,0 +1,17 @@
+{
+  "name": "stellar-mcp",
+  "description": "Generate MCP servers from Soroban smart contract specifications",
+  "version": "0.1.0",
+  "commands": [
+    {
+      "name": "mcp generate",
+      "description": "Generate an MCP server from a deployed Soroban contract",
+      "exec": "stellar-mcp generate"
+    },
+    {
+      "name": "mcp validate",
+      "description": "Validate a generated MCP server",
+      "exec": "stellar-mcp validate"
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+// PasskeyKit integration for {{contract_name}}
+import { PasskeyKit, PasskeyClient } from 'passkey-kit';
+import {
+  Keypair,
+  TransactionBuilder,
+  rpc,
+  Operation,
+} from '@stellar/stellar-sdk';
+
+// Configuration from environment (read once at module level)
+const RPC_URL = process.env.RPC_URL || '{{rpc_url}}';
+const NETWORK_PASSPHRASE =
+  process.env.NETWORK_PASSPHRASE || '{{network_passphrase}}';
+
+/**
+ * Get a PasskeyKit instance configured for a specific wallet contract
+ *
+ * @param walletContractId - Smart wallet contract ID
+ * @returns Configured PasskeyKit instance
+ */
+export function getPasskeyWallet(walletContractId: string): PasskeyKit {
+  const WALLET_WASM_HASH = process.env.WALLET_WASM_HASH;
+
+  if (!WALLET_WASM_HASH) {
+    throw new Error(
+      'Passkey signing requires WALLET_WASM_HASH environment variable'
+    );
+  }
+
+  const passkeyKit = new PasskeyKit({
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+    walletWasmHash: WALLET_WASM_HASH,
+  });
+
+  // Set the wallet to the specific smart wallet contract
+  passkeyKit.wallet = new PasskeyClient({
+    contractId: walletContractId,
+    rpcUrl: RPC_URL,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  });
+
+  return passkeyKit;
+}
+
+/**
+ * Sign and submit transaction using passkey wallet
+ *
+ * This function handles the sequence number staleness issue by:
+ * 1. Having PasskeyKit sign the auth entries (which are sequence-independent)
+ * 2. Rebuilding the transaction with a fresh sequence number
+ * 3. Re-simulating for fresh footprint/resources
+ * 4. Signing the envelope and submitting
+ *
+ * Environment variables required:
+ * - WALLET_WASM_HASH: Smart wallet WASM hash
+ * - WALLET_SIGNER_SECRET: Secret key for wallet signer (signs auth entries)
+ *
+ * @param xdr - Transaction XDR to sign and submit
+ * @param walletContractId - Smart wallet contract ID
+ * @param feePayerSecret - Secret key for fee payer (signs envelope)
+ * @returns Submission result
+ */
+export async function signAndSendWithPasskey(
+  xdr: string,
+  walletContractId: string,
+  feePayerSecret: string
+): Promise<any> {
+  const WALLET_SIGNER_SECRET = process.env.WALLET_SIGNER_SECRET;
+
+  if (!WALLET_SIGNER_SECRET) {
+    throw new Error(
+      'Passkey signing requires WALLET_SIGNER_SECRET environment variable'
+    );
+  }
+
+  const walletSignerKeypair = Keypair.fromSecret(WALLET_SIGNER_SECRET);
+  const feePayerKeypair = feePayerSecret
+    ? Keypair.fromSecret(feePayerSecret)
+    : walletSignerKeypair;
+  const server = new rpc.Server(RPC_URL, { allowHttp: true });
+  const passkeyWallet = getPasskeyWallet(walletContractId);
+
+  // Step 1: PasskeyKit signs auth entries using wallet signer
+  // Auth entries sign the invocation payload, NOT the transaction envelope
+  // This means they are sequence-number independent
+  const assembledTx = await passkeyWallet.sign(xdr, {
+    keypair: walletSignerKeypair,
+  });
+
+  // Step 2: Extract operation with signed auth entries
+  const builtTx = assembledTx.built!;
+  const operation = builtTx.operations[0] as Operation.InvokeHostFunction;
+
+  // Step 3: Fetch fresh account for fee payer (current sequence number)
+  const sourceAccount = await server.getAccount(feePayerKeypair.publicKey());
+
+  // Step 4: Rebuild transaction with fresh sequence, preserving signed auth
+  const rebuiltTx = new TransactionBuilder(sourceAccount, {
+    fee: builtTx.fee,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(
+      Operation.invokeHostFunction({
+        func: operation.func,
+        auth: operation.auth, // Signed auth entries preserved!
+      })
+    )
+    .setTimeout(30)
+    .build();
+
+  // Step 5: Simulate to get fresh footprint/resources
+  const simResponse = await server.simulateTransaction(rebuiltTx);
+
+  if (rpc.Api.isSimulationError(simResponse)) {
+    throw new Error(`Simulation failed: ${simResponse.error}`);
+  }
+
+  // Step 6: Assemble with simulation data
+  const assembledRebuilt = rpc
+    .assembleTransaction(rebuiltTx, simResponse)
+    .build();
+
+  // Step 7: Sign envelope with fee payer and submit
+  assembledRebuilt.sign(feePayerKeypair);
+  const response = await server.sendTransaction(assembledRebuilt);
+
+  if (response.status !== 'PENDING') {
+    const errorMessage =
+      (response as any).errorResult?.toXDR?.('base64') ||
+      (response as any).errorResultXdr ||
+      JSON.stringify(response);
+    throw new Error(`Transaction failed: ${response.status} - ${errorMessage}`);
+  }
+
+  // Step 8: Poll for result
+  const txResult = await server.pollTransaction(response.hash, {
+    sleepStrategy: () => 500,
+    attempts: 60,
+  });
+
+  return {
+    hash: response.hash,
+    status: txResult.status,
+    parsedResult: txResult.status === 'SUCCESS' ? txResult : undefined,
+  };
+}

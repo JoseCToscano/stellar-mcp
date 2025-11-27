@@ -1,0 +1,15 @@
+// Transaction utilities for {{contract_name}}
+import { xdr, scValToNative } from '@stellar/stellar-sdk';
+
+export function parseTransactionResult(resultMetaXdr: string): any {
+  const meta = xdr.TransactionMeta.fromXDR(resultMetaXdr, 'base64');
+  const v3 = meta.v3();
+  const sorobanMeta = v3.sorobanMeta();
+
+  if (!sorobanMeta) {
+    return null;
+  }
+
+  const returnValue = sorobanMeta.returnValue();
+  return scValToNative(returnValue);
+}
