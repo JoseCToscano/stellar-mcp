@@ -1,0 +1,609 @@
+#![cfg(test)]
+use super::*;
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, Env, Vec, BytesN, Bytes,
+};
+
+{{#if admin_managed}}
+//
+// ============================================================================
+// ADMIN INITIALIZATION TESTS
+// ============================================================================
+//
+
+#[test]
+fn test_init_success() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    client.init(&admin);
+
+    // Should not panic
+}
+
+#[test]
+#[should_panic(expected = "Error(NotInitialized)")]
+fn test_policy_not_initialized() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(BytesN::from_array(&env, &[0u8; 32]));
+    let contexts = Vec::new(&env);
+
+    // Should panic because contract not initialized
+    client.policy__(&source, &signer, &contexts);
+}
+{{/if}}
+
+{{#if has_amount_cap}}
+//
+// ============================================================================
+// AMOUNT CAP TESTS
+// ============================================================================
+//
+
+#[test]
+fn test_amount_cap_allows_within_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+
+    // Configure wallet with max amount
+    let signer_bytes = BytesN::from_array(&env, &[1u8; 32]);
+    client.add_wallet(&signer_bytes{{#if has_amount_cap}}, &100000{{/if}}{{#if has_rate_limiting}}, &100{{/if}});
+    {{/if}}
+
+    // Create context with amount = 50000 (within limit)
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(signer_bytes);
+    let contract = Address::generate(&env);
+    let fn_name = soroban_sdk::String::from_str(&env, "transfer");
+
+    let mut args = Vec::new(&env);
+    args.push_back(soroban_sdk::Val::from_void()); // from
+    args.push_back(soroban_sdk::Val::from_void()); // to
+    args.push_back(env.to_val(&50000i128)); // amount = 50000 (within limit)
+
+    let contract_context = ContractContext {
+        contract,
+        fn_name,
+        args,
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context));
+
+    // Should NOT panic - amount is within limit
+    client.policy__(&source, &signer, &contexts);
+}
+
+#[test]
+#[should_panic(expected = "Error(TooMuch)")]
+fn test_amount_cap_blocks_over_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+
+    // Configure wallet with max amount = 100000
+    let signer_bytes = BytesN::from_array(&env, &[1u8; 32]);
+    client.add_wallet(&signer_bytes{{#if has_amount_cap}}, &100000{{/if}}{{#if has_rate_limiting}}, &100{{/if}});
+    {{/if}}
+
+    // Create context with amount = 150000 (EXCEEDS limit)
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(signer_bytes);
+    let contract = Address::generate(&env);
+    let fn_name = soroban_sdk::String::from_str(&env, "transfer");
+
+    let mut args = Vec::new(&env);
+    args.push_back(soroban_sdk::Val::from_void()); // from
+    args.push_back(soroban_sdk::Val::from_void()); // to
+    args.push_back(env.to_val(&150000i128)); // amount = 150000 (over limit!)
+
+    let contract_context = ContractContext {
+        contract,
+        fn_name,
+        args,
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context));
+
+    // Should PANIC with TooMuch error
+    client.policy__(&source, &signer, &contexts);
+}
+
+#[test]
+fn test_amount_cap_exact_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+
+    // Configure wallet with max amount = 100000
+    let signer_bytes = BytesN::from_array(&env, &[1u8; 32]);
+    client.add_wallet(&signer_bytes{{#if has_amount_cap}}, &100000{{/if}}{{#if has_rate_limiting}}, &100{{/if}});
+    {{/if}}
+
+    // Create context with amount = 100000 (EXACTLY at limit)
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(signer_bytes);
+    let contract = Address::generate(&env);
+    let fn_name = soroban_sdk::String::from_str(&env, "transfer");
+
+    let mut args = Vec::new(&env);
+    args.push_back(soroban_sdk::Val::from_void()); // from
+    args.push_back(soroban_sdk::Val::from_void()); // to
+    args.push_back(env.to_val(&100000i128)); // amount = 100000 (exact limit)
+
+    let contract_context = ContractContext {
+        contract,
+        fn_name,
+        args,
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context));
+
+    // Should NOT panic - exact limit should be allowed
+    client.policy__(&source, &signer, &contexts);
+}
+{{/if}}
+
+{{#if has_contract_whitelist}}
+//
+// ============================================================================
+// CONTRACT WHITELIST TESTS
+// ============================================================================
+//
+
+#[test]
+fn test_contract_whitelist_allows_whitelisted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+    {{/if}}
+
+    // Use first whitelisted contract from config
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(BytesN::from_array(&env, &[1u8; 32]));
+    let whitelisted_contract = Address::from_string(&soroban_sdk::String::from_str(&env, "{{contract_whitelist_0}}"));
+    let fn_name = soroban_sdk::String::from_str(&env, "transfer");
+
+    let args = Vec::new(&env);
+
+    let contract_context = ContractContext {
+        contract: whitelisted_contract,
+        fn_name,
+        args,
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context));
+
+    // Should NOT panic - contract is whitelisted
+    client.policy__(&source, &signer, &contexts);
+}
+
+#[test]
+#[should_panic(expected = "Error(NotAllowed)")]
+fn test_contract_whitelist_blocks_non_whitelisted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+    {{/if}}
+
+    // Use random contract NOT in whitelist
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(BytesN::from_array(&env, &[1u8; 32]));
+    let non_whitelisted_contract = Address::generate(&env); // Random address
+    let fn_name = soroban_sdk::String::from_str(&env, "transfer");
+
+    let args = Vec::new(&env);
+
+    let contract_context = ContractContext {
+        contract: non_whitelisted_contract,
+        fn_name,
+        args,
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context));
+
+    // Should PANIC with NotAllowed error
+    client.policy__(&source, &signer, &contexts);
+}
+{{/if}}
+
+{{#if has_recipient_whitelist}}
+//
+// ============================================================================
+// RECIPIENT WHITELIST TESTS
+// ============================================================================
+//
+
+#[test]
+fn test_recipient_whitelist_allows_whitelisted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+    {{/if}}
+
+    // Use first whitelisted recipient from config
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(BytesN::from_array(&env, &[1u8; 32]));
+    let contract = Address::generate(&env);
+    let fn_name = soroban_sdk::String::from_str(&env, "transfer");
+    let whitelisted_recipient = Address::from_string(&soroban_sdk::String::from_str(&env, "{{recipient_whitelist_0}}"));
+
+    let mut args = Vec::new(&env);
+    args.push_back(soroban_sdk::Val::from_void()); // from
+    args.push_back(env.to_val(&whitelisted_recipient)); // to (whitelisted)
+    args.push_back(env.to_val(&1000i128)); // amount
+
+    let contract_context = ContractContext {
+        contract,
+        fn_name,
+        args,
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context));
+
+    // Should NOT panic - recipient is whitelisted
+    client.policy__(&source, &signer, &contexts);
+}
+
+#[test]
+#[should_panic(expected = "Error(NotAllowed)")]
+fn test_recipient_whitelist_blocks_non_whitelisted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+    {{/if}}
+
+    // Use random recipient NOT in whitelist
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(BytesN::from_array(&env, &[1u8; 32]));
+    let contract = Address::generate(&env);
+    let fn_name = soroban_sdk::String::from_str(&env, "transfer");
+    let non_whitelisted_recipient = Address::generate(&env); // Random address
+
+    let mut args = Vec::new(&env);
+    args.push_back(soroban_sdk::Val::from_void()); // from
+    args.push_back(env.to_val(&non_whitelisted_recipient)); // to (NOT whitelisted)
+    args.push_back(env.to_val(&1000i128)); // amount
+
+    let contract_context = ContractContext {
+        contract,
+        fn_name,
+        args,
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context));
+
+    // Should PANIC with NotAllowed error
+    client.policy__(&source, &signer, &contexts);
+}
+{{/if}}
+
+{{#if has_function_whitelist}}
+//
+// ============================================================================
+// FUNCTION WHITELIST TESTS
+// ============================================================================
+//
+
+#[test]
+fn test_function_whitelist_allows_whitelisted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+    {{/if}}
+
+    // Use first whitelisted function from config
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(BytesN::from_array(&env, &[1u8; 32]));
+    let contract = Address::generate(&env);
+    let fn_name = soroban_sdk::String::from_str(&env, "{{function_whitelist_0}}");
+
+    let args = Vec::new(&env);
+
+    let contract_context = ContractContext {
+        contract,
+        fn_name,
+        args,
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context));
+
+    // Should NOT panic - function is whitelisted
+    client.policy__(&source, &signer, &contexts);
+}
+
+#[test]
+#[should_panic(expected = "Error(NotAllowed)")]
+fn test_function_whitelist_blocks_non_whitelisted() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+    {{/if}}
+
+    // Use function NOT in whitelist
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(BytesN::from_array(&env, &[1u8; 32]));
+    let contract = Address::generate(&env);
+    let fn_name = soroban_sdk::String::from_str(&env, "malicious_function"); // NOT whitelisted
+
+    let args = Vec::new(&env);
+
+    let contract_context = ContractContext {
+        contract,
+        fn_name,
+        args,
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context));
+
+    // Should PANIC with NotAllowed error
+    client.policy__(&source, &signer, &contexts);
+}
+{{/if}}
+
+{{#if has_rate_limiting}}
+//
+// ============================================================================
+// RATE LIMITING TESTS
+// ============================================================================
+//
+
+#[test]
+fn test_rate_limiting_allows_first_transaction() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+
+    // Configure wallet with min_ledgers = 100
+    let signer_bytes = BytesN::from_array(&env, &[1u8; 32]);
+    client.add_wallet(&signer_bytes{{#if has_amount_cap}}, &100000{{/if}}{{#if has_rate_limiting}}, &100{{/if}});
+    {{/if}}
+
+    // First transaction
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(signer_bytes);
+    let contract = Address::generate(&env);
+    let fn_name = soroban_sdk::String::from_str(&env, "transfer");
+
+    let args = Vec::new(&env);
+
+    let contract_context = ContractContext {
+        contract,
+        fn_name,
+        args,
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context));
+
+    // Should NOT panic - first transaction allowed
+    client.policy__(&source, &signer, &contexts);
+}
+
+#[test]
+#[should_panic(expected = "Error(TooSoon)")]
+fn test_rate_limiting_blocks_too_soon() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+
+    // Configure wallet with min_ledgers = 100
+    let signer_bytes = BytesN::from_array(&env, &[1u8; 32]);
+    client.add_wallet(&signer_bytes{{#if has_amount_cap}}, &100000{{/if}}{{#if has_rate_limiting}}, &100{{/if}});
+    {{/if}}
+
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(signer_bytes);
+    let contract = Address::generate(&env);
+    let fn_name = soroban_sdk::String::from_str(&env, "transfer");
+
+    let args = Vec::new(&env);
+
+    let contract_context = ContractContext {
+        contract: contract.clone(),
+        fn_name: fn_name.clone(),
+        args: args.clone(),
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context.clone()));
+
+    // First transaction - should succeed
+    client.policy__(&source, &signer, &contexts);
+
+    // Advance ledger by only 50 (less than min_ledgers = 100)
+    env.ledger().with_mut(|li| {
+        li.sequence_number += 50;
+    });
+
+    // Second transaction - should PANIC with TooSoon
+    let mut contexts2 = Vec::new(&env);
+    contexts2.push_back(Context::Contract(contract_context));
+    client.policy__(&source, &signer, &contexts2);
+}
+
+#[test]
+fn test_rate_limiting_allows_after_waiting() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+
+    // Configure wallet with min_ledgers = 100
+    let signer_bytes = BytesN::from_array(&env, &[1u8; 32]);
+    client.add_wallet(&signer_bytes{{#if has_amount_cap}}, &100000{{/if}}{{#if has_rate_limiting}}, &100{{/if}});
+    {{/if}}
+
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(signer_bytes);
+    let contract = Address::generate(&env);
+    let fn_name = soroban_sdk::String::from_str(&env, "transfer");
+
+    let args = Vec::new(&env);
+
+    let contract_context = ContractContext {
+        contract: contract.clone(),
+        fn_name: fn_name.clone(),
+        args: args.clone(),
+        auth: Vec::new(&env),
+    };
+
+    let mut contexts = Vec::new(&env);
+    contexts.push_back(Context::Contract(contract_context.clone()));
+
+    // First transaction - should succeed
+    client.policy__(&source, &signer, &contexts);
+
+    // Advance ledger by 100 (exactly min_ledgers)
+    env.ledger().with_mut(|li| {
+        li.sequence_number += 100;
+    });
+
+    // Second transaction - should succeed after waiting
+    let mut contexts2 = Vec::new(&env);
+    contexts2.push_back(Context::Contract(contract_context));
+    client.policy__(&source, &signer, &contexts2);
+}
+{{/if}}
+
+//
+// ============================================================================
+// BASIC POLICY TESTS
+// ============================================================================
+//
+
+#[test]
+fn test_policy_empty_contexts() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    {{#if admin_managed}}
+    // Initialize with admin
+    let admin = Address::generate(&env);
+    client.init(&admin);
+    {{/if}}
+
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(BytesN::from_array(&env, &[1u8; 32]));
+    let contexts = Vec::new(&env);
+
+    // Should not panic with empty contexts
+    client.policy__(&source, &signer, &contexts);
+}
+
+{{#unless admin_managed}}
+#[test]
+fn test_policy_basic_operation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, Contract);
+    let client = ContractClient::new(&env, &contract_id);
+
+    let source = Address::generate(&env);
+    let signer = SignerKey::Ed25519(BytesN::from_array(&env, &[0u8; 32]));
+    let contexts = Vec::new(&env);
+
+    // Basic policy check should not panic
+    client.policy__(&source, &signer, &contexts);
+}
+{{/unless}}

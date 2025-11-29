@@ -1,0 +1,58 @@
+[package]
+name = "stellar-policy-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["Stellar Policy Team"]
+description = "A Stellar CLI plugin to generate policy smart contracts for smart wallets"
+license = "Apache-2.0"
+repository = "https://github.com/stellar/stellar-policy-cli"
+readme = "README.md"
+rust-version = "1.85"
+keywords = ["stellar-cli-plugin", "stellar", "soroban", "policy", "smart-wallet"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+debug = true
+opt-level = 0
+
+[dependencies]
+# CLI framework
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Interactive CLI
+dialoguer = "0.11"
+console = "0.15"
+
+# Template engine
+handlebars = "6.0"
+
+# TOML parsing/writing
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3.8"
+
+[lib]
+name = "stellar_policy_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "stellar-policy"
+path = "src/main.rs"

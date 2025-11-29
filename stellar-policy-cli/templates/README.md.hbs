@@ -1,0 +1,225 @@
+# {{policy_name}} Policy Contract
+
+{{#if description}}{{description}}{{else}}A Stellar smart wallet policy contract generated with stellar-policy CLI.{{/if}}
+
+## Policy Features
+
+{{#if has_function_whitelist}}
+✅ **Function Whitelisting** - Restricts which contract functions can be called
+- Allowed functions: {{#each function_whitelist}}`{{this}}`{{#unless @last}}, {{/unless}}{{/each}}
+{{/if}}
+
+{{#if has_contract_whitelist}}
+✅ **Contract Whitelisting** - Restricts which contracts can be interacted with
+- Allowed contracts: {{contract_whitelist_count}} contract(s)
+{{/if}}
+
+{{#if has_recipient_whitelist}}
+✅ **Recipient Whitelisting** - Restricts destination addresses for transfers
+- Allowed recipients: {{recipient_whitelist_count}} address(es)
+{{/if}}
+
+{{#if has_amount_cap}}
+✅ **Amount Caps** - Enforces maximum transaction amounts
+- Maximum amount: {{amount_cap.max_amount}}{{#if amount_cap.token_contract}} ({{amount_cap.token_contract}}){{/if}}
+{{/if}}
+
+{{#if has_rate_limiting}}
+✅ **Rate Limiting** - Enforces time delays between transactions
+- Minimum ledgers between transactions: {{rate_limiting.min_ledgers}}
+{{/if}}
+
+{{#if admin_managed}}
+⚙️ **Admin-Managed** - Supports runtime updates and user management
+{{else}}
+🔒 **Simple Policy** - Hardcoded rules, no admin overhead
+{{/if}}
+
+## Prerequisites
+
+- Rust (stable toolchain)
+- Stellar CLI (`cargo install stellar-cli`)
+- Make (for build commands)
+
+## Build & Test
+
+```bash
+# Build the contract
+make build
+
+# Run tests
+make test
+```
+
+## Deployment
+
+### Testnet
+
+```bash
+make deploy-testnet
+```
+
+### Mainnet
+
+```bash
+make deploy-mainnet
+```
+
+{{#if admin_managed}}
+## Initialization
+
+After deployment, initialize the contract with an admin address:
+
+```bash
+stellar contract invoke \
+  --id YOUR_DEPLOYED_CONTRACT_ID \
+  --source me \
+  --rpc-url https://soroban-testnet.stellar.org \
+  --network-passphrase "Test SDF Network ; September 2015" \
+  -- init \
+  --admin YOUR_ADMIN_ADDRESS
+```
+
+Replace:
+- `YOUR_DEPLOYED_CONTRACT_ID` with the contract ID from deployment
+- `YOUR_ADMIN_ADDRESS` with the admin's Stellar address (G...)
+- `me` with your Stellar CLI identity name
+{{/if}}
+
+## TypeScript Integration
+
+This project includes TypeScript setup for integrating the policy contract with web applications.
+
+### Complete Workflow
+
+#### 1. Build the Contract
+
+```bash
+make build
+```
+
+This compiles the Rust contract to WASM.
+
+#### 2. Deploy the Contract
+
+```bash
+make deploy-testnet
+```
+
+You'll be prompted to choose:
+- **Option 1**: Use Stellar CLI identity (e.g., "me", "admin")
+- **Option 2**: Enter secret key directly
+
+Save the deployed contract ID for the next steps.
+
+#### 3. Generate TypeScript Bindings
+
+```bash
+make bindings
+```
+
+This does three things:
+1. Runs `stellar contract bindings typescript` to generate the SDK
+2. Automatically fixes missing type definitions (SignerKey, Context)
+3. Creates the `{{policy_name}}-sdk/` directory with TypeScript client code
+
+**Why the fix is needed**: The `smart-wallet-interface` types (`SignerKey`, `Context`) aren't exported in the contract spec because they have `export = false` in the interface crate. Our post-bindings script adds these type definitions automatically.
+
+#### 4. Install SDK Dependencies
+
+```bash
+cd {{policy_name}}-sdk
+pnpm install
+```
+
+#### 5. Build the SDK
+
+```bash
+pnpm build
+```
+
+This compiles the TypeScript SDK to JavaScript.
+
+#### 6. Install Root Dependencies (for examples)
+
+```bash
+cd ..  # Back to project root
+pnpm install
+```
+
+#### 7. Run the Example
+
+```bash
+pnpm example
+```
+
+### Usage Example
+
+See `examples/typescript-integration.ts` for a complete working example that shows:
+
+{{#if admin_managed}}
+- Initializing the policy contract (admin only)
+{{#if has_amount_cap}}
+- Adding wallets to the allowlist
+{{/if}}
+{{/if}}
+- Integrating with passkey-kit smart wallets
+- Configuring signer limits
+
+### Troubleshooting
+
+#### Missing Type Definitions
+
+If you see errors like `Cannot find name 'SignerKey'` or `Cannot find name 'Context'`, run:
+
+```bash
+bash scripts/fix-bindings.sh {{policy_name}}-sdk
+```
+
+This manually adds the missing type definitions.
+
+#### SDK Build Errors
+
+Make sure you're in the SDK directory and have installed dependencies:
+
+```bash
+cd {{policy_name}}-sdk
+pnpm install
+pnpm build
+```
+
+### Integration with Smart Wallets
+
+To use this policy with a passkey-kit smart wallet:
+
+1. Deploy and initialize the policy contract
+2. Generate TypeScript bindings
+3. Use the contract ID when configuring signer limits
+4. Attach the policy to specific signers using `SignerKey.Policy(contractId)`
+
+**Example Integration**:
+
+```typescript
+import { Client } from './{{policy_name}}-sdk';
+
+const policyClient = new Client({
+  contractId: 'YOUR_DEPLOYED_CONTRACT_ID',
+  networkPassphrase: Networks.TESTNET,
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+});
+
+// Configure signer limits in your smart wallet
+const signerLimits = new Map();
+signerLimits.set(
+  TARGET_CONTRACT_ADDRESS,
+  [{ tag: 'Policy', values: [policyClient.options.contractId] }]
+);
+```
+
+For complete integration documentation, see:
+- [passkey-kit repository](https://github.com/kalepail/passkey-kit)
+- [Stellar Smart Wallet documentation](https://developers.stellar.org)
+
+## Generated with
+
+[Stellar Policy CLI](https://github.com/stellar/stellar-policy-cli) - Generate policy smart contracts for Stellar smart wallets

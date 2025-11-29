@@ -1,0 +1,12 @@
+{
+  "name": "stellar-policy",
+  "description": "Generate policy smart contracts for Stellar smart wallets",
+  "version": "0.1.0",
+  "commands": [
+    {
+      "name": "policy generate",
+      "description": "Generate a policy smart contract via interactive wizard",
+      "exec": "stellar-policy generate"
+    }
+  ]
+}
