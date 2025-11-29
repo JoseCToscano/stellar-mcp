@@ -1,0 +1,75 @@
+.PHONY: build test deploy-testnet deploy-mainnet bindings
+
+build:
+	cd contracts && cargo build --target wasm32-unknown-unknown --release
+
+test:
+	cd contracts && cargo test
+
+deploy-testnet:
+	@echo "🚀 Deploy to Testnet"
+	@echo ""
+	@echo "Choose deployment method:"
+	@echo "  1) Use Stellar CLI identity (configured with 'stellar keys')"
+	@echo "  2) Enter secret key directly"
+	@echo ""
+	@read -p "Enter choice [1/2]: " choice; \
+	if [ "$$choice" = "2" ]; then \
+		read -p "Enter secret key: " secret; \
+		stellar contract deploy \
+			--wasm contracts/target/wasm32-unknown-unknown/release/{{policy_name_snake}}.wasm \
+			--source-account "$$secret" \
+			--rpc-url https://soroban-testnet.stellar.org \
+			--network-passphrase "Test SDF Network ; September 2015"; \
+	else \
+		read -p "Enter identity name (default: me): " identity; \
+		identity=$${identity:-me}; \
+		stellar contract deploy \
+			--wasm contracts/target/wasm32-unknown-unknown/release/{{policy_name_snake}}.wasm \
+			--source "$$identity" \
+			--rpc-url https://soroban-testnet.stellar.org \
+			--network-passphrase "Test SDF Network ; September 2015"; \
+	fi
+
+deploy-mainnet:
+	@echo "🚀 Deploy to Mainnet"
+	@echo ""
+	@echo "⚠️  WARNING: This will deploy to MAINNET (real network)"
+	@echo ""
+	@echo "Choose deployment method:"
+	@echo "  1) Use Stellar CLI identity (configured with 'stellar keys')"
+	@echo "  2) Enter secret key directly"
+	@echo ""
+	@read -p "Enter choice [1/2]: " choice; \
+	if [ "$$choice" = "2" ]; then \
+		read -p "Enter secret key: " secret; \
+		stellar contract deploy \
+			--wasm contracts/target/wasm32-unknown-unknown/release/{{policy_name_snake}}.wasm \
+			--source-account "$$secret" \
+			--rpc-url https://soroban-mainnet.stellar.org \
+			--network-passphrase "Public Global Stellar Network ; September 2015"; \
+	else \
+		read -p "Enter identity name (default: me): " identity; \
+		identity=$${identity:-me}; \
+		stellar contract deploy \
+			--wasm contracts/target/wasm32-unknown-unknown/release/{{policy_name_snake}}.wasm \
+			--source "$$identity" \
+			--rpc-url https://soroban-mainnet.stellar.org \
+			--network-passphrase "Public Global Stellar Network ; September 2015"; \
+	fi
+
+bindings:
+	@echo "🔨 Generating TypeScript bindings..."
+	stellar contract bindings typescript \
+		--wasm contracts/target/wasm32-unknown-unknown/release/{{policy_name_snake}}.wasm \
+		--rpc-url https://soroban-testnet.stellar.org \
+		--network-passphrase "Test SDF Network ; September 2015" \
+		--output-dir {{policy_name}}-sdk
+	@echo "🔧 Fixing missing type definitions..."
+	@bash scripts/fix-bindings.sh {{policy_name}}-sdk
+	@echo "✅ Bindings generated successfully!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. cd {{policy_name}}-sdk"
+	@echo "  2. pnpm install"
+	@echo "  3. pnpm build"

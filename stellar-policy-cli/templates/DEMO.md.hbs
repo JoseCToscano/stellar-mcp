@@ -1,0 +1,349 @@
+# {{policy_name}} Policy Contract Demo Guide
+
+This guide shows you how to test your deployed {{policy_name}} policy contract.
+
+## Prerequisites
+
+1. Policy contract deployed{{#if admin_managed}} and initialized{{/if}}
+2. SDK bindings generated (run `make bindings`)
+3. {{#if admin_managed}}Funded testnet account (admin){{else}}Funded testnet account{{/if}}
+
+## Quick Start
+
+### Step 1: Install Dependencies
+
+```bash
+pnpm install
+```
+
+### Step 2: Build the SDK
+
+```bash
+cd {{policy_name}}-sdk
+pnpm install
+pnpm build
+cd ..
+```
+
+## Testing with Stellar CLI
+
+{{#if admin_managed}}
+### Test 1: Add a Wallet to the Policy (Admin Only)
+
+```bash
+# Create a test user public key (32 bytes hex)
+TEST_USER_PUBKEY="0000000000000000000000000000000000000000000000000000000000000001"
+
+# Add wallet to policy
+stellar contract invoke \
+  --id YOUR_DEPLOYED_CONTRACT_ID \
+  --source YOUR_ADMIN_IDENTITY \
+  --network testnet \
+  -- \
+  add_wallet \
+  --user "$TEST_USER_PUBKEY"{{#if has_amount_cap}} \
+  --max_amount {{amount_cap.max_amount}}{{/if}}{{#if has_rate_limiting}} \
+  --min_ledgers {{rate_limiting.min_ledgers}}{{/if}}
+```
+
+{{/if}}
+### Test 2: Understand Policy Validation
+
+This policy contract validates:
+
+{{#if function_whitelist}}
+**✅ Function Whitelist**
+Only allows these functions:
+{{#each function_whitelist}}
+- `{{this}}`
+{{/each}}
+
+{{/if}}
+{{#if contract_whitelist}}
+**✅ Contract Whitelist**
+Only allows calls to these contracts:
+{{#each contract_whitelist}}
+- `{{this}}`
+{{/each}}
+
+{{/if}}
+{{#if recipient_whitelist}}
+**✅ Recipient Whitelist**
+Only allows transfers to these addresses:
+{{#each recipient_whitelist}}
+- `{{this}}`
+{{/each}}
+
+{{/if}}
+{{#if has_amount_cap}}
+**✅ Amount Caps**
+- {{#if admin_managed}}Default: {{amount_cap.max_amount}} stroops (configurable per wallet){{else}}Maximum: {{amount_cap.max_amount}} stroops{{/if}}
+
+{{/if}}
+{{#if has_rate_limiting}}
+**✅ Rate Limiting**
+- {{#if admin_managed}}Default: {{rate_limiting.min_ledgers}} ledgers minimum between transactions (configurable per wallet){{else}}Minimum: {{rate_limiting.min_ledgers}} ledgers between transactions{{/if}}
+
+{{/if}}
+## Using with Passkey Kit Smart Wallet
+
+To use this policy with a real smart wallet:
+
+### 1. Deploy a Smart Wallet
+
+Follow the passkey-kit documentation:
+https://github.com/kalepail/passkey-kit
+
+### 2. Add Signer with Policy
+
+When adding an Ed25519 signer to your smart wallet, specify this policy contract:
+
+```typescript
+import { Client as WalletClient } from 'passkey-kit-sdk';
+
+// Your smart wallet instance
+const wallet = new WalletClient({
+  contractId: 'YOUR_SMART_WALLET_CONTRACT_ID',
+  networkPassphrase: 'Test SDF Network ; September 2015',
+  rpcUrl: 'https://soroban-testnet.stellar.org'
+});
+
+// Add signer with policy limits
+await wallet.add_signer({
+  signer: {
+    tag: 'Ed25519',
+    values: [
+      userPublicKeyBytes,  // BytesN<32>
+      { tag: 'None' },     // SignerExpiration
+      {                    // SignerLimits
+        tag: 'Some',
+        values: [
+          new Map([
+            [
+              targetContractAddress,  // The contract this signer can call
+              [
+                {
+                  tag: 'Policy',
+                  values: ['YOUR_POLICY_CONTRACT_ID']
+                }
+              ]
+            ]
+          ])
+        ]
+      },
+      'Persistent'  // SignerStorage
+    ]
+  }
+});
+```
+
+### 3. Test Transaction Validation
+
+Once the signer is added with the policy, any transaction attempted by this signer will be validated by the policy contract.
+
+{{#if function_whitelist}}
+**Function Validation:**
+The policy only allows these functions to be called:
+{{#each function_whitelist}}
+- `{{this}}`
+{{/each}}
+
+Any attempt to call other functions will fail with `Error #4 (NotAllowed)`.
+
+{{/if}}
+{{#if contract_whitelist}}
+**Contract Validation:**
+The policy only allows calls to these contracts:
+{{#each contract_whitelist}}
+- `{{this}}`
+{{/each}}
+
+Any attempt to call other contracts will fail with `Error #4 (NotAllowed)`.
+
+{{/if}}
+{{#if recipient_whitelist}}
+**Recipient Validation:**
+The policy only allows transfers to these addresses:
+{{#each recipient_whitelist}}
+- `{{this}}`
+{{/each}}
+
+Any attempt to transfer to other addresses will fail with `Error #4 (NotAllowed)`.
+
+{{/if}}
+{{#if has_amount_cap}}
+**Amount Cap Validation:**
+{{#if admin_managed}}
+- Default maximum: {{amount_cap.max_amount}} stroops
+- Customizable per wallet via `add_wallet`
+{{else}}
+- Maximum amount: {{amount_cap.max_amount}} stroops
+{{/if}}
+
+Transactions exceeding the amount cap will fail with `Error #6 (TooMuch)`.
+
+{{/if}}
+{{#if has_rate_limiting}}
+**Rate Limit Validation:**
+{{#if admin_managed}}
+- Default minimum interval: {{rate_limiting.min_ledgers}} ledgers (~{{rate_limit_minutes}} minutes)
+- Customizable per wallet via `add_wallet`
+{{else}}
+- Minimum interval: {{rate_limiting.min_ledgers}} ledgers (~{{rate_limit_minutes}} minutes)
+{{/if}}
+
+Transactions attempted too soon will fail with `Error #5 (TooSoon)`.
+
+{{/if}}
+## Example: JavaScript Integration
+
+Create a test script using the generated SDK:
+
+```javascript
+import { Client } from './{{policy_name}}-sdk/dist/index.js';
+
+const POLICY_CONTRACT_ID = 'YOUR_DEPLOYED_CONTRACT_ID';
+const RPC_URL = 'https://soroban-testnet.stellar.org';
+const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015';
+
+const client = new Client({
+  contractId: POLICY_CONTRACT_ID,
+  networkPassphrase: NETWORK_PASSPHRASE,
+  rpcUrl: RPC_URL,
+});
+
+{{#if admin_managed}}
+// Example: Add a wallet (admin only)
+async function addWallet(userPubkey) {
+  try {
+    console.log('Adding wallet to policy...');
+
+    const result = await client.add_wallet({
+      user: Buffer.from(userPubkey, 'hex'),{{#if has_amount_cap}}
+      max_amount: BigInt({{amount_cap.max_amount}}),{{/if}}{{#if has_rate_limiting}}
+      min_ledgers: {{rate_limiting.min_ledgers}}{{/if}}
+    });
+
+    console.log('✅ Wallet added successfully!');
+    return result;
+  } catch (error) {
+    console.error('❌ Failed to add wallet:', error);
+    throw error;
+  }
+}
+
+// Test
+// addWallet('0000000000000000000000000000000000000000000000000000000000000001');
+{{else}}
+// This is a simple policy - no admin functions needed
+// The policy validates transactions based on the configured rules
+console.log('Policy contract deployed at:', POLICY_CONTRACT_ID);
+console.log('Use this contract ID when configuring smart wallet signers');
+{{/if}}
+```
+
+## Policy Error Codes
+
+If a transaction violates any policy rule, it will fail with one of these errors:
+
+{{#if admin_managed}}
+- `Error #1 (AlreadyInitialized)` - Contract already initialized
+- `Error #2 (NotInitialized)` - Contract not initialized yet
+{{/if}}
+- `Error #4 (NotAllowed)` - {{#if function_whitelist}}Function not whitelisted, {{/if}}{{#if contract_whitelist}}contract not whitelisted, or {{/if}}{{#if recipient_whitelist}}recipient not whitelisted{{/if}}
+{{#if has_rate_limiting}}- `Error #5 (TooSoon)` - Rate limit not met (wait more ledgers){{/if}}
+{{#if has_amount_cap}}- `Error #6 (TooMuch)` - Amount exceeds cap{{/if}}
+
+## Testing Strategy
+
+### 1. Positive Tests (Should Succeed)
+
+{{#if function_whitelist}}
+✅ Call whitelisted functions
+{{/if}}
+{{#if contract_whitelist}}
+✅ Call whitelisted contracts
+{{/if}}
+{{#if recipient_whitelist}}
+✅ Send to whitelisted recipients
+{{/if}}
+{{#if has_amount_cap}}
+✅ Send amounts within the cap
+{{/if}}
+{{#if has_rate_limiting}}
+✅ Wait required ledgers between transactions
+{{/if}}
+
+### 2. Negative Tests (Should Fail)
+
+{{#if function_whitelist}}
+❌ Call non-whitelisted functions → `Error #4`
+{{/if}}
+{{#if contract_whitelist}}
+❌ Call non-whitelisted contracts → `Error #4`
+{{/if}}
+{{#if recipient_whitelist}}
+❌ Send to non-whitelisted recipients → `Error #4`
+{{/if}}
+{{#if has_amount_cap}}
+❌ Exceed amount cap → `Error #6`
+{{/if}}
+{{#if has_rate_limiting}}
+❌ Transaction too soon → `Error #5`
+{{/if}}
+
+## Deployment Checklist
+
+- [ ] Contract built: `make build`
+- [ ] Contract deployed: `make deploy-testnet`
+{{#if admin_managed}}- [ ] Contract initialized with admin address{{/if}}
+- [ ] Bindings generated: `make bindings`
+- [ ] SDK built and tested
+- [ ] Smart wallet deployed (if using passkey-kit)
+- [ ] Signer added with policy limits
+- [ ] Tested positive cases
+- [ ] Tested negative cases
+
+## Resources
+
+- [Passkey Kit GitHub](https://github.com/kalepail/passkey-kit)
+- [Stellar Docs: Smart Contracts](https://developers.stellar.org/docs/smart-contracts)
+- [Soroban RPC](https://developers.stellar.org/docs/data/rpc)
+- [Policy Contract Source](./contracts/{{policy_name}}/src/lib.rs)
+
+## Your Policy Configuration
+
+{{#if function_whitelist}}
+**Function Whitelist:**
+{{#each function_whitelist}}
+- `{{this}}`
+{{/each}}
+
+{{/if}}
+{{#if contract_whitelist}}
+**Contract Whitelist:**
+{{#each contract_whitelist}}
+- `{{this}}`
+{{/each}}
+
+{{/if}}
+{{#if recipient_whitelist}}
+**Recipient Whitelist:**
+{{#each recipient_whitelist}}
+- `{{this}}`
+{{/each}}
+
+{{/if}}
+{{#if has_amount_cap}}
+**Amount Cap:**
+- {{#if admin_managed}}Default: {{else}}Maximum: {{/if}}{{amount_cap.max_amount}} stroops ({{amount_cap_xlm}} XLM)
+
+{{/if}}
+{{#if has_rate_limiting}}
+**Rate Limiting:**
+- {{#if admin_managed}}Default: {{else}}Minimum: {{/if}}{{rate_limiting.min_ledgers}} ledgers (~{{rate_limit_minutes}} minutes)
+{{/if}}
+
+---
+
+**Need help?** Check the [main README](./README.md) or refer to the Stellar documentation.
