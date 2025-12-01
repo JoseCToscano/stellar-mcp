@@ -3,7 +3,8 @@ Contract client for {{contract_name}}
 Wraps stellar-contract-bindings generated code with MCP-friendly interface
 """
 
-from typing import Any, Dict, Optional
+import re
+from typing import Any, Dict, Optional, Union, List
 from dataclasses import dataclass
 
 # stellar-contract-bindings will generate the actual ContractClient
@@ -16,6 +17,49 @@ class ContractConfig:
     contract_id: str
     rpc_url: str
     network_passphrase: str
+
+
+def convert_mcp_params(obj: Any) -> Any:
+    """
+    Helper to convert MCP tool parameters to Stellar SDK types:
+    - None → None (Python handles Optional natively)
+    - hex strings → bytes (for BytesN fields like 'salt', '*_hash', etc.)
+    - numeric strings → int (for i128/u128 fields like '*_supply', 'cap', 'amount', etc.)
+
+    This handles the same type conversions as the TypeScript generator's convertNullToUndefined.
+    """
+    if obj is None:
+        return None
+
+    if not isinstance(obj, (dict, list)):
+        return obj
+
+    if isinstance(obj, list):
+        return [convert_mcp_params(item) for item in obj]
+
+    result = {}
+    for key, value in obj.items():
+        # Convert hex strings to bytes for known Bytes fields
+        if (isinstance(value, str) and
+            (key == 'salt' or key.endswith('_hash') or key.endswith('_wasm')) and
+            re.match(r'^[0-9a-fA-F]+$', value)):
+            result[key] = bytes.fromhex(value)
+
+        # Convert numeric strings to int for known i128/u128 fields
+        elif (isinstance(value, str) and
+              ('supply' in key or key in ('cap', 'amount', 'balance', 'value') or
+               '_amount' in key or '_balance' in key) and
+              re.match(r'^-?[0-9]+$', value)):
+            result[key] = int(value)
+
+        # Recursively convert nested objects
+        elif isinstance(value, (dict, list)):
+            result[key] = convert_mcp_params(value)
+
+        else:
+            result[key] = value
+
+    return result
 
 
 class ContractClient:
@@ -49,8 +93,18 @@ class ContractClient:
         Returns:
             Dict with 'xdr' (transaction XDR) and 'simulationResult'
         """
+        {{#if inputs}}
+        # Convert MCP parameters to Stellar SDK types
+        # This handles None, hex strings → bytes, numeric strings → int
+        params = convert_mcp_params({
+            {{#each inputs}}
+            "{{name}}": {{name_snake}},
+            {{/each}}
+        })
+        {{/if}}
+
         # TODO: Call stellar-contract-bindings generated method
-        # result = await self.client.{{name_snake}}({{#each inputs}}{{name_snake}}={{name_snake}}{{#unless @last}}, {{/unless}}{{/each}})
+        # result = await self.client.{{name_snake}}({{#if inputs}}**params{{/if}})
 
         # For now, return placeholder
         raise NotImplementedError(
