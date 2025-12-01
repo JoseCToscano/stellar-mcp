@@ -1,0 +1,71 @@
+// LaunchTube integration for {{contract_name}}
+import {
+  Keypair,
+  TransactionBuilder,
+} from '@stellar/stellar-sdk';
+import { parseTransactionResult } from './transaction.js';
+
+const LAUNCHTUBE_URL = process.env.LAUNCHTUBE_URL || 'https://testnet.launchtube.xyz';
+const LAUNCHTUBE_JWT = process.env.LAUNCHTUBE_JWT;
+const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || '{{network_passphrase}}';
+
+export interface SubmitOptions {
+  secretKey?: string;
+  walletContractId?: string;
+  fee?: number;
+}
+
+interface LaunchTubeResult {
+  hash?: string;
+  resultMetaXdr?: string;
+  [key: string]: unknown;
+}
+
+export async function submitToLaunchtube(
+  xdrTx: string,
+  options: SubmitOptions = {}
+): Promise<LaunchTubeResult & { parsedResult?: unknown }> {
+  if (!LAUNCHTUBE_JWT) {
+    throw new Error('LAUNCHTUBE_JWT environment variable is required');
+  }
+
+  let signedXdr = xdrTx;
+
+  // If secret key provided, sign the transaction first
+  if (options.secretKey) {
+    const keypair = Keypair.fromSecret(options.secretKey);
+    const transaction = TransactionBuilder.fromXDR(xdrTx, NETWORK_PASSPHRASE);
+    transaction.sign(keypair);
+    signedXdr = transaction.toXDR();
+  }
+
+  const data = new FormData();
+  data.set('xdr', signedXdr);
+  if (options.fee) data.set('fee', options.fee.toString());
+
+  const response = await fetch(LAUNCHTUBE_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${LAUNCHTUBE_JWT}`,
+      'X-Client-Name': '{{contract_name}}-mcp',
+      'X-Client-Version': '1.0.0',
+    },
+    body: data,
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`LaunchTube submission failed: ${error}`);
+  }
+
+  const result = await response.json() as LaunchTubeResult;
+
+  if (result.resultMetaXdr) {
+    return {
+      ...result,
+      parsedResult: parseTransactionResult(result.resultMetaXdr),
+    };
+  }
+
+  return result;
+}

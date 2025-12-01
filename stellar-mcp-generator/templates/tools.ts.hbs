@@ -1,0 +1,90 @@
+// Generated tool handlers for {{contract_name}}
+import {
+  Contract,
+  Keypair,
+  TransactionBuilder,
+  Account,
+  rpc,
+  nativeToScVal,
+  scValToNative,
+  Address,
+} from '@stellar/stellar-sdk';
+
+export interface ContractConfig {
+  contractId: string;
+  rpcUrl: string;
+  networkPassphrase: string;
+}
+
+// Helper to convert JS values to ScVal for contract calls
+function toScVal(value: any, type?: string): any {
+  if (type === 'Address' || (type === 'string' && typeof value === 'string' && value.length === 56)) {
+    return new Address(value).toScVal();
+  }
+  return nativeToScVal(value);
+}
+
+{{#each functions}}
+/**
+ * {{doc}}
+ */
+export async function {{name_camel}}(
+  params: {{#if has_inputs}}{ {{#each inputs}}{{name_camel}}: {{ts_type}}{{#unless @last}}; {{/unless}}{{/each}} }{{else}}Record<string, never>{{/if}},
+  config: ContractConfig
+): Promise<{ xdr: string; simulationResult?: any }> {
+  const server = new rpc.Server(config.rpcUrl);
+  const contract = new Contract(config.contractId);
+
+  // Get a funded account for simulation (uses a random keypair)
+  // In production, this would be the user's account
+  const sourceKeypair = Keypair.random();
+  const sourceAccount = await server.getAccount(sourceKeypair.publicKey()).catch(() => {
+    // If account doesn't exist, create a mock account for simulation
+    return new Account(sourceKeypair.publicKey(), '0');
+  });
+
+  // Build the contract call operation for '{{name}}'
+  const operation = contract.call(
+    '{{name}}',
+    {{#each inputs}}
+    toScVal(params.{{name_camel}}, {{#if is_address}}'Address'{{else}}undefined{{/if}}),
+    {{/each}}
+  );
+
+  // Build the transaction
+  const transaction = new TransactionBuilder(sourceAccount, {
+    fee: '100',
+    networkPassphrase: config.networkPassphrase,
+  })
+    .addOperation(operation)
+    .setTimeout(30)
+    .build();
+
+  // Simulate the transaction
+  const simulated = await server.simulateTransaction(transaction);
+
+  if (rpc.Api.isSimulationError(simulated)) {
+    throw new Error(`Simulation failed: ${simulated.error}`);
+  }
+
+  // Prepare the transaction with simulation results
+  const prepared = rpc.assembleTransaction(transaction, simulated).build();
+
+  // Extract result if available
+  let simulationResult: any = undefined;
+  if (rpc.Api.isSimulationSuccess(simulated) && simulated.result) {
+    try {
+      simulationResult = scValToNative(simulated.result.retval);
+    } catch (e) {
+      // Some types can't be converted to native
+      simulationResult = simulated.result.retval;
+    }
+  }
+
+  return {
+    xdr: prepared.toXDR(),
+    simulationResult,
+  };
+}
+
+{{/each}}

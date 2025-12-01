@@ -1,0 +1,32 @@
+{
+  "name": "{{contract_name}}-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for {{contract_name}} Soroban contract",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "{{contract_name}}-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/sdk --external:@stellar/stellar-sdk --external:zod --external:dotenv --banner:js=\"#!/usr/bin/env node\"",
+    "start": "node dist/index.js",
+    "dev": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/sdk --external:@stellar/stellar-sdk --external:zod --external:dotenv --banner:js=\"#!/usr/bin/env node\" --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.8.0",
+    "@stellar/stellar-sdk": "^14.0.0",
+    "zod": "^3.23.0",
+    "dotenv": "^16.4.0"{{#if with_passkey}},
+    "passkey-kit": "^0.10.19"{{/if}}{{#if with_launchtube}},
+    "sac-sdk": "^0.3.6"{{/if}}
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "esbuild": "^0.24.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,141 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
+import * as tools from './tools/{{contract_name}}.js';
+{{#if with_launchtube}}
+import { submitToLaunchtube } from './lib/launchtube.js';
+{{/if}}
+{{#if with_passkey}}
+import { signAndSendWithPasskey } from './lib/passkey.js';
+{{/if}}
+import { submitTransaction } from './lib/submit.js';
+import { signTransaction } from './lib/utils.js';
+
+// Configuration from environment
+const CONTRACT_ID = process.env.CONTRACT_ID || '{{contract_id}}';
+const RPC_URL = process.env.RPC_URL || '{{rpc_url}}';
+const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || '{{network_passphrase}}';
+
+// Helper to serialize BigInt values (Soroban uses i128/u128 which become BigInt in JS)
+const jsonStringify = (obj: unknown, space?: number): string => {
+  return JSON.stringify(obj, (_, value) =>
+    typeof value === 'bigint' ? value.toString() : value, space);
+};
+
+// Initialize MCP server
+const server = new McpServer({
+  name: '{{server_name}}-mcp',
+  version: '1.0.0',
+});
+
+{{#each functions}}
+// Tool: {{name}}
+server.tool(
+  '{{name_kebab}}',
+  '{{doc}}',
+  {{#if has_inputs}}
+  {
+    {{#each inputs}}
+    {{name}}: {{{zod_type}}}.describe('{{doc}}'),
+    {{/each}}
+  },
+  {{else}}
+  {},
+  {{/if}}
+  async (params) => {
+    try {
+      const result = await tools.{{name}}(params, {
+        contractId: CONTRACT_ID,
+        rpcUrl: RPC_URL,
+        networkPassphrase: NETWORK_PASSPHRASE,
+      });
+
+      return {
+        content: [{
+          type: 'text',
+          text: jsonStringify(result, 2),
+        }],
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: jsonStringify({
+            error: 'Tool execution failed',
+            message: error instanceof Error ? error.message : 'Unknown error',
+          }),
+        }],
+      };
+    }
+  }
+);
+
+{{/each}}
+// Tool: sign-and-submit
+server.tool(
+  'sign-and-submit',
+  'Sign a transaction XDR and submit to the network. Use walletContractId for passkey smart wallet signing (requires WALLET_SIGNER_SECRET env var), or secretKey for regular keypair signing. secretKey is always required as fee payer.',
+  {
+    xdr: z.string().describe('Transaction XDR to sign and submit'),
+    secretKey: z.string().optional().describe('Secret key for signing. For passkey flow, this becomes the fee payer secret.'),
+    walletContractId: z.string().optional().describe('Smart wallet contract ID for passkey signing (uses WALLET_SIGNER_SECRET from env, secretKey as fee payer)'),
+  },
+  async ({ xdr, secretKey, walletContractId }) => {
+    try {
+      if (!secretKey) {
+        throw new Error('Either secretKey (for regular signing) or walletContractId (for passkey signing) is required');
+      }
+
+      {{#if with_passkey}}
+      // Use passkey signing if walletContractId is provided
+      if (walletContractId) {
+        // Passkey signing uses WALLET_SIGNER_SECRET from env for auth, secretKey as fee payer
+        const result = await signAndSendWithPasskey(xdr, walletContractId, secretKey);
+        return {
+          content: [{
+            type: 'text',
+            text: jsonStringify({ success: true, result }),
+          }],
+        };
+      }
+      {{/if}}
+
+      {{#if with_launchtube}}
+      // Use LaunchTube for submission (with keypair signing)
+      const result = await submitToLaunchtube(xdr, { secretKey });
+      {{else}}
+      // Regular signing: signAuthEntries + sign envelope + submit
+      const signedXdr = await signTransaction(xdr, secretKey);
+      const result = await submitTransaction(signedXdr);
+      {{/if}}
+      return {
+        content: [{
+          type: 'text',
+          text: jsonStringify({ success: true, result }),
+        }],
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: jsonStringify({
+            error: 'Submission failed',
+            message: error instanceof Error ? error.message : 'Unknown error',
+          }),
+        }],
+      };
+    }
+  }
+);
+
+// Start server
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error('{{server_name}}-mcp MCP server running on stdio');
+}
+
+main().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});

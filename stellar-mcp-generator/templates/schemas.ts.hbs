@@ -1,0 +1,35 @@
+// Generated Zod schemas for {{contract_name}}
+import { z } from 'zod';
+
+{{#each types}}
+{{#if is_struct}}
+export const {{name_pascal}}Schema = z.object({
+  {{#each fields}}
+  {{name_camel}}: {{{zod_type}}},
+  {{/each}}
+});
+
+{{/if}}
+{{#if is_enum}}
+export const {{name_pascal}}Schema = z.enum([{{#each variants}}'{{name}}'{{#unless @last}}, {{/unless}}{{/each}}]);
+
+{{/if}}
+{{#if is_union}}
+export const {{name_pascal}}Schema = z.discriminatedUnion('type', [
+  {{#each cases}}
+  z.object({ type: z.literal('{{name}}'){{#if has_value}}, value: {{{zod_type}}}{{/if}} }),
+  {{/each}}
+]);
+
+{{/if}}
+{{/each}}
+{{#each functions}}
+{{#if has_inputs}}
+export const {{name_pascal}}ParamsSchema = z.object({
+  {{#each inputs}}
+  {{name_camel}}: {{{zod_type}}},
+  {{/each}}
+});
+
+{{/if}}
+{{/each}}
