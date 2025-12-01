@@ -1,0 +1,105 @@
+"""
+Transaction submission utilities for Stellar MCP server
+"""
+
+from stellar_sdk import SorobanServer, TransactionEnvelope
+from stellar_sdk.exceptions import NotFoundError
+import os
+import asyncio
+from typing import Dict, Any
+
+
+async def submit_transaction(signed_xdr: str) -> Dict[str, Any]:
+    """
+    Submit a signed transaction to the Stellar network and poll for result
+
+    Args:
+        signed_xdr: Signed transaction XDR string
+
+    Returns:
+        Dict containing:
+            - hash: Transaction hash
+            - status: Transaction status
+            - result: Full transaction result
+
+    Raises:
+        Exception: If submission or polling fails
+    """
+    rpc_url = os.getenv("RPC_URL", "https://soroban-testnet.stellar.org")
+    network_passphrase = os.getenv("NETWORK_PASSPHRASE", "Test SDF Network ; September 2015")
+
+    try:
+        # Initialize Soroban server
+        server = SorobanServer(rpc_url)
+
+        # Parse the signed transaction
+        envelope = TransactionEnvelope.from_xdr(signed_xdr, network_passphrase)
+
+        # Submit the transaction
+        response = server.send_transaction(envelope)
+
+        # Get transaction hash
+        tx_hash = response.hash
+
+        # Poll for transaction result (60 attempts at 500ms intervals = 30 seconds)
+        for attempt in range(60):
+            try:
+                # Get transaction status
+                tx_response = server.get_transaction(tx_hash)
+                status = tx_response.status
+
+                if status == "SUCCESS":
+                    # Parse Soroban result if available
+                    result_value = None
+                    if hasattr(tx_response, 'result_meta_xdr'):
+                        try:
+                            # Try to extract Soroban result from meta
+                            # This is a simplified version - full parsing would use soroban_sdk
+                            result_value = "Transaction succeeded (result parsing not yet implemented)"
+                        except Exception:
+                            result_value = "Transaction succeeded"
+
+                    return {
+                        "hash": tx_hash,
+                        "status": "SUCCESS",
+                        "result": result_value or "Transaction succeeded",
+                        "ledger": getattr(tx_response, 'ledger', None),
+                    }
+
+                elif status == "FAILED":
+                    # Transaction failed
+                    error_message = getattr(tx_response, 'result_xdr', 'Transaction failed')
+                    return {
+                        "hash": tx_hash,
+                        "status": "FAILED",
+                        "error": error_message,
+                        "ledger": getattr(tx_response, 'ledger', None),
+                    }
+
+                elif status == "NOT_FOUND":
+                    # Still pending, continue polling
+                    await asyncio.sleep(0.5)
+                    continue
+
+                else:
+                    # Unknown status
+                    return {
+                        "hash": tx_hash,
+                        "status": status,
+                        "message": f"Transaction in unknown state: {status}",
+                    }
+
+            except NotFoundError:
+                # Transaction not yet in ledger, continue polling
+                await asyncio.sleep(0.5)
+                continue
+
+        # Timeout after 30 seconds
+        return {
+            "hash": tx_hash,
+            "status": "TIMEOUT",
+            "error": "Transaction polling timed out after 30 seconds",
+        }
+
+    except Exception as e:
+        raise Exception(f"Failed to submit transaction: {str(e)}")

@@ -43,9 +43,11 @@ Before you begin, make sure you have the following installed:
 | ------------------------------------------------------------------------------- | --------------------------------------------- | --------- | --------------------------- |
 | [Python](https://www.python.org/)                                               | For running Python servers                    | **3.10+** | Download from official site |
 | [uv](https://docs.astral.sh/uv/)                                                | Fast Python package manager (recommended)     | Latest    | `pip install uv`            |
-| [stellar-contract-bindings](https://pypi.org/project/stellar-contract-bindings/) | For generating type-safe Python bindings      | **0.5.0+** | Installed via uv           |
+| [stellar-contract-bindings](https://pypi.org/project/stellar-contract-bindings/) | For generating type-safe Python bindings (auto-called by generator) | **0.5.0+** | `pip install stellar-contract-bindings` |
 
-> **Important**: Python 3.10 or higher is required. Verify with `python --version`.
+> **Important**:
+> - Python 3.10 or higher is required. Verify with `python --version`.
+> - `stellar-contract-bindings` is required for Python generation. Install with `pip install stellar-contract-bindings` or `uv pip install stellar-contract-bindings`.
 
 ---
 
@@ -113,7 +115,7 @@ pnpm start
 ### Python MCP Server
 
 ```bash
-# 1. Generate the server with --lang python
+# 1. Generate the server with --lang python (bindings auto-generated)
 stellar mcp generate \
   --contract-id <Contract ID> \
   --network testnet \
@@ -125,19 +127,15 @@ stellar mcp generate \
 cd my-token-mcp
 uv sync
 
-# 3. Generate Python bindings
-stellar-contract-bindings python \
-  --contract-id <Contract ID> \
-  --rpc-url https://soroban-testnet.stellar.org \
-  --output ./src/bindings
-
-# 4. Configure environment
+# 3. Configure environment
 cp .env.example .env
 # Edit .env with your contract details
 
-# 5. Run the server
+# 4. Run the server
 uv run mcp install server.py
 ```
+
+> **Note**: Python bindings are automatically generated using `stellar-contract-bindings`. If the package is not installed, the generator will show installation instructions.
 
 ---
 

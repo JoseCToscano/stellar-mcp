@@ -46,10 +46,14 @@ impl<'a> PythonGenerator<'a> {
         // Create directory structure
         self.create_directories()?;
 
+        // Generate official Stellar Python bindings first
+        self.generate_official_bindings()?;
+
         // Generate Python files
         self.generate_server_py(spec)?;
         self.generate_contract_client(spec)?;
         self.generate_init_py()?;
+        self.generate_lib_files()?;
         self.generate_pyproject_toml()?;
         self.generate_env_example()?;
         self.generate_readme(spec)?;
@@ -59,12 +63,8 @@ impl<'a> PythonGenerator<'a> {
         println!("  Next steps:");
         println!("    1. cd {}", self.output_dir.display());
         println!("    2. uv sync  # Install dependencies");
-        println!("    3. stellar-contract-bindings python \\");
-        println!("         --contract-id {} \\", self.contract_id);
-        println!("         --rpc-url {} \\", self.network.rpc_url);
-        println!("         --output ./src/bindings");
-        println!("    4. cp .env.example .env && edit .env");
-        println!("    5. uv run mcp install server.py");
+        println!("    3. cp .env.example .env && edit .env");
+        println!("    4. uv run mcp install server.py");
 
         Ok(())
     }
@@ -72,7 +72,78 @@ impl<'a> PythonGenerator<'a> {
     fn create_directories(&self) -> Result<(), Box<dyn std::error::Error>> {
         fs::create_dir_all(self.output_dir.join("src"))?;
         fs::create_dir_all(self.output_dir.join("src/bindings"))?;
+        fs::create_dir_all(self.output_dir.join("src/lib"))?;
         Ok(())
+    }
+
+    /// Generate official Stellar Python bindings using stellar-contract-bindings CLI
+    fn generate_official_bindings(&self) -> Result<(), Box<dyn std::error::Error>> {
+        use std::process::Command;
+
+        println!("  Generating official Stellar Python bindings...");
+
+        let bindings_dir = self.output_dir.join("src/bindings");
+
+        // Try to call stellar-contract-bindings python
+        let output = Command::new("stellar-contract-bindings")
+            .arg("python")
+            .arg("--contract-id")
+            .arg(self.contract_id)
+            .arg("--rpc-url")
+            .arg(&self.network.rpc_url)
+            .arg("--output")
+            .arg(&bindings_dir)
+            .output();
+
+        match output {
+            Ok(result) => {
+                if !result.status.success() {
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+
+                    // Check if it's a "command not found" type error
+                    if stderr.contains("not found") || stderr.contains("No such file") {
+                        return Err(self.bindings_not_installed_error());
+                    }
+
+                    return Err(format!("Failed to generate Stellar bindings: {}", stderr).into());
+                }
+                println!("  ✓ Generated official bindings in src/bindings/");
+                Ok(())
+            }
+            Err(e) => {
+                // Command failed to execute (likely not installed)
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    Err(self.bindings_not_installed_error())
+                } else {
+                    Err(format!("Failed to execute stellar-contract-bindings: {}", e).into())
+                }
+            }
+        }
+    }
+
+    fn bindings_not_installed_error(&self) -> Box<dyn std::error::Error> {
+        let msg = format!(
+            "\n❌ stellar-contract-bindings is not installed!\n\n\
+            The Python generator requires the 'stellar-contract-bindings' package.\n\n\
+            Install it with:\n\
+            \n\
+            Option 1 (using pip):\n\
+              pip install stellar-contract-bindings\n\
+            \n\
+            Option 2 (using uv - recommended):\n\
+              uv pip install stellar-contract-bindings\n\
+            \n\
+            Then run the generator again.\n\
+            \n\
+            Alternatively, you can generate bindings manually after generation:\n\
+              stellar-contract-bindings python \\\n\
+                --contract-id {} \\\n\
+                --rpc-url {} \\\n\
+                --output ./src/bindings\n",
+            self.contract_id,
+            self.network.rpc_url
+        );
+        msg.into()
     }
 
     fn generate_server_py(&self, spec: &ContractSpec) -> Result<(), Box<dyn std::error::Error>> {
@@ -157,6 +228,22 @@ impl<'a> PythonGenerator<'a> {
 
         let output = hbs.render("readme", &data)?;
         fs::write(self.output_dir.join("README.md"), output)?;
+
+        Ok(())
+    }
+
+    fn generate_lib_files(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // Generate lib/__init__.py
+        let init_template = include_str!("../../templates/python/lib/__init__.py.hbs");
+        fs::write(self.output_dir.join("src/lib/__init__.py"), init_template)?;
+
+        // Generate lib/utils.py
+        let utils_template = include_str!("../../templates/python/lib/utils.py.hbs");
+        fs::write(self.output_dir.join("src/lib/utils.py"), utils_template)?;
+
+        // Generate lib/submit.py
+        let submit_template = include_str!("../../templates/python/lib/submit.py.hbs");
+        fs::write(self.output_dir.join("src/lib/submit.py"), submit_template)?;
 
         Ok(())
     }

@@ -1,0 +1,56 @@
+"""
+Transaction signing utilities for Stellar MCP server
+Simplified version - secret key signing only (no PasskeyKit support)
+"""
+
+from stellar_sdk import Keypair, TransactionEnvelope, Network
+from typing import Optional
+import os
+
+
+async def sign_transaction(
+    xdr: str,
+    secret_key: Optional[str] = None
+) -> str:
+    """
+    Sign a transaction XDR with a secret key
+
+    Simplified version - no auth entry signing support yet.
+    For PasskeyKit support, use the TypeScript MCP generator.
+
+    Args:
+        xdr: Unsigned transaction XDR string
+        secret_key: Stellar secret key (S...). If not provided, uses SIGNER_SECRET env var
+
+    Returns:
+        Signed transaction XDR string
+
+    Raises:
+        ValueError: If secret_key is not provided and SIGNER_SECRET env var is not set
+        Exception: If signing fails
+    """
+    # Get secret key from parameter or environment
+    key = secret_key or os.getenv("SIGNER_SECRET")
+    if not key:
+        raise ValueError(
+            "No secret key provided. Pass secret_key parameter or set SIGNER_SECRET environment variable"
+        )
+
+    try:
+        # Parse the transaction envelope
+        envelope = TransactionEnvelope.from_xdr(
+            xdr,
+            network_passphrase=os.getenv("NETWORK_PASSPHRASE", "Test SDF Network ; September 2015")
+        )
+
+        # Create keypair from secret
+        keypair = Keypair.from_secret(key)
+
+        # Sign the transaction
+        envelope.sign(keypair)
+
+        # Return signed XDR
+        return envelope.to_xdr()
+
+    except Exception as e:
+        raise Exception(f"Failed to sign transaction: {str(e)}")

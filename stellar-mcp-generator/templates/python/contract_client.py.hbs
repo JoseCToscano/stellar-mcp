@@ -7,9 +7,15 @@ import re
 from typing import Any, Dict, Optional, Union, List
 from dataclasses import dataclass
 
-# stellar-contract-bindings will generate the actual ContractClient
-# This will be imported after generation
-# from .bindings.bindings import ContractClient as GeneratedClient
+# Import the generated bindings from stellar-contract-bindings
+try:
+    from .bindings.bindings import ClientAsync as GeneratedClient
+except ImportError:
+    raise ImportError(
+        "Contract bindings not found. "
+        "Please run: stellar-contract-bindings python --contract-id {{contract_id}} "
+        "--rpc-url {{rpc_url}} --output ./src/bindings"
+    )
 
 @dataclass
 class ContractConfig:
@@ -70,8 +76,16 @@ class ContractClient:
 
     def __init__(self, config: ContractConfig):
         self.config = config
-        # TODO: Initialize generated client from stellar-contract-bindings
-        # self.client = GeneratedClient(...)
+        # Initialize generated client from stellar-contract-bindings
+        # The ClientAsync expects contract_id and SorobanServer instance
+        from stellar_sdk import SorobanServer
+
+        server = SorobanServer(config.rpc_url)
+        self.client = GeneratedClient(
+            contract_id=config.contract_id,
+            rpc=server,
+            network_passphrase=config.network_passphrase
+        )
 
     {{#each functions}}
     async def {{name_snake}}(
@@ -103,14 +117,14 @@ class ContractClient:
         })
         {{/if}}
 
-        # TODO: Call stellar-contract-bindings generated method
-        # result = await self.client.{{name_snake}}({{#if inputs}}**params{{/if}})
+        # Call the generated bindings method
+        # The method returns an AssembledTransaction with .transaction and .simulation
+        assembled = await self.client.{{name_snake}}({{#if inputs}}**params{{/if}})
 
-        # For now, return placeholder
-        raise NotImplementedError(
-            "Contract bindings not yet generated. "
-            "Run: stellar-contract-bindings python --contract-id {{../contract_id}} "
-            "--rpc-url {{../rpc_url}} --output ./src/bindings"
-        )
+        # Return transaction XDR and simulation result in MCP-compatible format
+        return {
+            "xdr": assembled.transaction.to_xdr(),
+            "simulationResult": assembled.simulation if hasattr(assembled, 'simulation') else None
+        }
 
     {{/each}}
