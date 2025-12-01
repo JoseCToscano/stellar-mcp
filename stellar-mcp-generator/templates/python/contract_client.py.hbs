@@ -1,0 +1,62 @@
+"""
+Contract client for {{contract_name}}
+Wraps stellar-contract-bindings generated code with MCP-friendly interface
+"""
+
+from typing import Any, Dict, Optional
+from dataclasses import dataclass
+
+# stellar-contract-bindings will generate the actual ContractClient
+# This will be imported after generation
+# from .bindings.bindings import ContractClient as GeneratedClient
+
+@dataclass
+class ContractConfig:
+    """Configuration for the Soroban contract"""
+    contract_id: str
+    rpc_url: str
+    network_passphrase: str
+
+
+class ContractClient:
+    """
+    Wrapper around stellar-contract-bindings generated client
+    Provides MCP-friendly interface for contract interactions
+    """
+
+    def __init__(self, config: ContractConfig):
+        self.config = config
+        # TODO: Initialize generated client from stellar-contract-bindings
+        # self.client = GeneratedClient(...)
+
+    {{#each functions}}
+    async def {{name_snake}}(
+        self,
+        {{#each inputs}}
+        {{name_snake}}: {{py_type}},
+        {{/each}}
+    ) -> Dict[str, Any]:
+        """
+        {{doc}}
+
+        {{#if inputs}}
+        Parameters:
+        {{#each inputs}}
+        - {{name_snake}} ({{py_type}}): {{#if doc}}{{doc}}{{else}}Contract parameter{{/if}}
+        {{/each}}
+        {{/if}}
+
+        Returns:
+            Dict with 'xdr' (transaction XDR) and 'simulationResult'
+        """
+        # TODO: Call stellar-contract-bindings generated method
+        # result = await self.client.{{name_snake}}({{#each inputs}}{{name_snake}}={{name_snake}}{{#unless @last}}, {{/unless}}{{/each}})
+
+        # For now, return placeholder
+        raise NotImplementedError(
+            "Contract bindings not yet generated. "
+            "Run: stellar-contract-bindings python --contract-id {{../contract_id}} "
+            "--rpc-url {{../rpc_url}} --output ./src/bindings"
+        )
+
+    {{/each}}

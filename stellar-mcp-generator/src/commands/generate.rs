@@ -207,8 +207,18 @@ pub async fn execute(args: GenerateArgs) -> Result<(), Box<dyn std::error::Error
         println!("To use with Claude Desktop, add to claude_desktop_config.json:");
         println!("  See {}/README.md for configuration", output.display());
     } else {
-        // Python generation - to be implemented in next tasks
-        return Err("Python generation is not yet implemented. Coming soon!".into());
+        // Python generation
+        use crate::generator::PythonGenerator;
+
+        let generator = PythonGenerator::new(
+            &output,
+            &contract_name,
+            &server_name,
+            &contract_id,
+            &network,
+        );
+
+        generator.generate(&spec, &args)?;
     }
 
     Ok(())
