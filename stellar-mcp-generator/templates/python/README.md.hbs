@@ -1,0 +1,323 @@
+# {{contract_name}} MCP Server
+
+MCP server for interacting with the **{{contract_name}}** Soroban contract.
+
+- **Contract ID**: `{{contract_id}}`
+- **Network**: {{network_name}}
+- **RPC URL**: {{rpc_url}}
+
+## Prerequisites
+
+- Python 3.10 or higher
+- `uv` (recommended) or `pip` for package management
+- `stellar-contract-bindings` CLI tool
+
+### Install stellar-contract-bindings
+
+```bash
+pip install stellar-contract-bindings
+```
+
+## Installation
+
+### Using uv (recommended)
+
+```bash
+# Install dependencies
+uv sync
+
+# Or install with pip
+uv pip install -e .
+```
+
+### Using pip
+
+```bash
+pip install -e .
+```
+
+## Configuration
+
+**Note:** Contract bindings are automatically generated in `src/bindings/` when you run the MCP generator. You don't need to run `stellar-contract-bindings` manually.
+
+Create a `.env` file from the example:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` to configure:
+
+```env
+CONTRACT_ID={{contract_id}}
+RPC_URL={{rpc_url}}
+NETWORK_PASSPHRASE={{network_passphrase}}
+
+# Optional: Set a default secret key for transaction signing
+# You can also provide the secret key in the conversation when calling sign_and_submit
+# SIGNER_SECRET=S...
+```
+
+## Running the Server
+
+### For Claude Desktop
+
+Install the server with Claude Desktop:
+
+```bash
+uv run mcp install server.py
+```
+
+Or manually add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+**Option 1: Using .env file**
+
+```json
+{
+  "mcpServers": {
+    "{{server_name}}": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/absolute/path/to/{{contract_name}}-mcp-server",
+        "run",
+        "server.py"
+      ]
+    }
+  }
+}
+```
+
+This will read configuration from your `.env` file in the project directory.
+
+**Option 2: Inline environment variables (Recommended)**
+
+```json
+{
+  "mcpServers": {
+    "{{server_name}}": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/absolute/path/to/{{contract_name}}-mcp-server",
+        "run",
+        "server.py"
+      ],
+      "env": {
+        "CONTRACT_ID": "{{contract_id}}",
+        "RPC_URL": "{{rpc_url}}",
+        "NETWORK_PASSPHRASE": "{{network_passphrase}}",
+        "SIGNER_SECRET": "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      }
+    }
+  }
+}
+```
+
+Using inline `env` is recommended because:
+- All configuration is in one place
+- No need to manage separate `.env` files
+- Easier to switch between different contracts/networks
+- SIGNER_SECRET can be set per MCP server
+
+### For Development
+
+```bash
+# Run with uv
+uv run server.py
+
+# Or with mcp dev tool
+uv run mcp dev server.py
+```
+
+## Available Tools
+
+### `sign_and_submit`
+
+Sign a transaction XDR and submit it to the Stellar network.
+
+**Parameters:**
+- `xdr` (str): Unsigned transaction XDR string to sign and submit
+- `secret_key` (Optional[str]): Stellar secret key (S...). If not provided, uses SIGNER_SECRET env var
+
+**Returns:**
+- `success` (bool): Whether the transaction succeeded
+- `result` (Dict): Transaction result with status, hash, and result data
+
+**Note**: This Python MCP server only supports secret key signing. For PasskeyKit (smart wallet) support, use the TypeScript MCP generator.
+
+#### Three Ways to Provide Secret Key
+
+**Option 1: Claude Desktop Config (Recommended)**
+
+Add `SIGNER_SECRET` to the `env` field in your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "{{server_name}}": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/server", "run", "server.py"],
+      "env": {
+        "CONTRACT_ID": "{{contract_id}}",
+        "SIGNER_SECRET": "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      }
+    }
+  }
+}
+```
+
+Then in conversation with Claude, call `sign_and_submit` without providing the secret key:
+
+```
+Call sign_and_submit with the xdr from the previous transaction
+```
+
+**Why this is recommended:**
+- Configuration is centralized in Claude Desktop
+- Easy to manage multiple MCP servers with different keys
+- No need to manage separate `.env` files
+
+**Option 2: Environment Variable (.env file)**
+
+Set `SIGNER_SECRET` in your `.env` file:
+
+```env
+SIGNER_SECRET=SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
+
+Useful for development or when running the server outside Claude Desktop.
+
+**Option 3: In Conversation (For one-time operations)**
+
+Provide the secret key directly in the conversation when calling `sign_and_submit`:
+
+```
+Call sign_and_submit with the xdr from the previous transaction and secret_key "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+```
+
+This is useful when:
+- You need to sign with different keys for different transactions
+- You don't want to store the key in any configuration
+- You're testing or doing one-time operations
+
+---
+
+{{#each functions}}
+### `{{name_snake}}`
+
+{{doc}}
+
+**Parameters:**
+{{#if inputs}}
+{{#each inputs}}
+- `{{name_snake}}` ({{py_type}}): {{#if doc}}{{doc}}{{else}}Contract parameter{{/if}}
+{{/each}}
+{{else}}
+None
+{{/if}}
+
+**Returns:**
+- `xdr` (str): Transaction XDR ready for signing
+- `simulationResult` (Any): Result from contract simulation
+
+---
+
+{{/each}}
+
+## Project Structure
+
+```
+.
+├── server.py              # MCP server entry point
+├── src/
+│   ├── __init__.py
+│   ├── contract_client.py # Contract client wrapper
+│   ├── lib/               # Transaction utilities
+│   │   ├── __init__.py
+│   │   ├── utils.py       # Transaction signing (secret key only)
+│   │   └── submit.py      # Transaction submission and polling
+│   └── bindings/          # Generated by stellar-contract-bindings
+│       └── bindings.py
+├── pyproject.toml         # Python project configuration
+├── .env.example           # Environment template
+└── README.md
+```
+
+## Development
+
+### Run Tests
+
+```bash
+uv run pytest
+```
+
+### Type Checking
+
+```bash
+uv run mypy src/
+```
+
+## Limitations
+
+### PasskeyKit Not Supported
+
+This Python MCP server **does not support PasskeyKit** (smart wallet) integration. PasskeyKit is a TypeScript-only library that provides passkey-based authentication for Stellar smart wallets.
+
+**Python version supports:**
+- ✅ Secret key signing (standard Stellar keypairs)
+- ✅ Transaction building and simulation via `stellar-contract-bindings`
+- ✅ Transaction submission and result polling
+- ✅ Full contract function access
+
+**Python version does NOT support:**
+- ❌ PasskeyKit smart wallet integration
+- ❌ Passkey-based signing
+- ❌ Auth entry signing (advanced Soroban feature)
+
+**If you need PasskeyKit support**, use the TypeScript MCP generator instead:
+
+```bash
+stellar mcp generate --contract-id <ID> --lang typescript
+```
+
+The TypeScript version includes complete PasskeyKit integration with wallet deployment scripts and two-phase transaction signing.
+
+## Troubleshooting
+
+### "Contract bindings not yet generated"
+
+The bindings should be automatically generated when you run the MCP generator. If you see this error, the `stellar-contract-bindings` package may not be installed. Install it with:
+
+```bash
+pip install stellar-contract-bindings
+# or with uv
+uv pip install stellar-contract-bindings
+```
+
+Then regenerate the MCP server, or manually run:
+
+```bash
+stellar-contract-bindings python \
+  --contract-id {{contract_id}} \
+  --rpc-url {{rpc_url}} \
+  --output ./src/bindings
+```
+
+### Permission Errors
+
+Ensure the server.py file has execute permissions:
+
+```bash
+chmod +x server.py
+```
+
+## Resources
+
+- [Model Context Protocol Python SDK](https://github.com/modelcontextprotocol/python-sdk)
+- [Stellar Contract Bindings](https://github.com/lightsail-network/stellar-contract-bindings)
+- [Stellar Python SDK](https://stellar-sdk.readthedocs.io/)
+
+---
+
+Generated by stellar-mcp-generator v{{version}}

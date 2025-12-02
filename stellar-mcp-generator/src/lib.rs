@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 pub mod commands;
 pub mod generator;
 pub mod spec;
+pub mod wizard;
 
 pub use commands::generate::GenerateArgs;
 pub use commands::validate::ValidateArgs;
