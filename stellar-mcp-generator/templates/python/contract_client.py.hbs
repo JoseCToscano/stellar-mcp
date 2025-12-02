@@ -4,12 +4,14 @@ Wraps stellar-contract-bindings generated code with MCP-friendly interface
 """
 
 import re
-from typing import Any, Dict, Optional, Union, List
+from typing import Any, Dict, Optional, Union, List, TYPE_CHECKING
 from dataclasses import dataclass
 
 # Import the generated bindings from stellar-contract-bindings
 try:
     from .bindings.bindings import ClientAsync as GeneratedClient
+    # Import all types from bindings module to make them available for type hints
+    from .bindings.bindings import *
 except ImportError:
     raise ImportError(
         "Contract bindings not found. "
