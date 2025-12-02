@@ -124,6 +124,7 @@ def serialize_result(result: Any) -> Any:
     - Address objects → string representation
     - Dataclass objects (TokenInfo, etc.) → dict
     - Custom classes with __dict__ → dict
+    - Python Enum instances → string value
     - Lists and nested objects recursively
     """
     if result is None:
@@ -132,6 +133,12 @@ def serialize_result(result: Any) -> Any:
     # Handle lists FIRST (before checking for dataclass fields)
     if isinstance(result, list):
         return [serialize_result(item) for item in result]
+
+    # Handle Python Enum instances (TokenTypeKind, DataKeyKind, etc.)
+    # Must check BEFORE checking for __dict__ since Enums also have __dict__
+    from enum import Enum
+    if isinstance(result, Enum):
+        return result.value  # Return the enum's value (e.g., "Pausable")
 
     # Handle stellar_sdk.Address - extract clean address string
     if hasattr(result, '__class__') and result.__class__.__name__ == 'Address':
