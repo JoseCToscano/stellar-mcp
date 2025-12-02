@@ -270,6 +270,7 @@ impl<'a> PythonGenerator<'a> {
 
         Ok(serde_json::json!({
             "contract_name": self.contract_name,
+            "package_name": to_python_package_name(self.contract_name),
             "contract_id": self.contract_id,
             "server_name": self.server_name,
             "network_name": self.network.name,
@@ -300,6 +301,27 @@ fn to_snake_case(s: &str) -> String {
     }
 
     result
+}
+
+/// Convert string to Python package name (PEP 508 compliant)
+/// Replaces spaces and invalid characters with hyphens, converts to lowercase
+fn to_python_package_name(s: &str) -> String {
+    let mut result = String::new();
+    let mut prev_was_separator = false;
+
+    for c in s.chars() {
+        if c.is_alphanumeric() {
+            result.push(c.to_ascii_lowercase());
+            prev_was_separator = false;
+        } else if !prev_was_separator {
+            // Replace any non-alphanumeric character (including spaces) with hyphen
+            result.push('-');
+            prev_was_separator = true;
+        }
+    }
+
+    // Remove leading/trailing hyphens
+    result.trim_matches('-').to_string()
 }
 
 /// Map Soroban type to Python type hint

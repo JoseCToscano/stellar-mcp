@@ -108,3 +108,14 @@ fn test_lib_init_exports_functions() {
     assert!(init_content.contains("__all__"),
         "Should define __all__ for explicit exports");
 }
+
+#[test]
+fn test_pyproject_uses_package_name() {
+    let pyproject_content = fs::read_to_string("templates/python/pyproject.toml.hbs")
+        .expect("Failed to read pyproject.toml.hbs");
+
+    assert!(pyproject_content.contains("name = \"{{package_name}}-mcp-server\""),
+        "Should use package_name variable for PEP 508 compliance");
+    assert!(!pyproject_content.contains("name = \"{{contract_name}}-mcp-server\""),
+        "Should not use contract_name directly (may contain spaces)");
+}
