@@ -19,6 +19,8 @@ load_dotenv()
 from src.contract_client import ContractClient, ContractConfig
 from src.lib.utils import sign_transaction
 from src.lib.submit import submit_transaction
+# Import all contract types from bindings for type annotations
+from src.bindings.bindings import *
 
 # Initialize MCP server
 mcp = FastMCP("{{server_name}}")
