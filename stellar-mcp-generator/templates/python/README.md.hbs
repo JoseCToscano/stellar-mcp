@@ -81,6 +81,8 @@ uv run mcp install server.py
 
 Or manually add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 
+**Option 1: Using .env file**
+
 ```json
 {
   "mcpServers": {
@@ -96,6 +98,38 @@ Or manually add to your Claude Desktop config (`~/Library/Application Support/Cl
   }
 }
 ```
+
+This will read configuration from your `.env` file in the project directory.
+
+**Option 2: Inline environment variables (Recommended)**
+
+```json
+{
+  "mcpServers": {
+    "{{server_name}}": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/absolute/path/to/{{contract_name}}-mcp-server",
+        "run",
+        "server.py"
+      ],
+      "env": {
+        "CONTRACT_ID": "{{contract_id}}",
+        "RPC_URL": "{{rpc_url}}",
+        "NETWORK_PASSPHRASE": "{{network_passphrase}}",
+        "SIGNER_SECRET": "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      }
+    }
+  }
+}
+```
+
+Using inline `env` is recommended because:
+- All configuration is in one place
+- No need to manage separate `.env` files
+- Easier to switch between different contracts/networks
+- SIGNER_SECRET can be set per MCP server
 
 ### For Development
 
@@ -123,9 +157,39 @@ Sign a transaction XDR and submit it to the Stellar network.
 
 **Note**: This Python MCP server only supports secret key signing. For PasskeyKit (smart wallet) support, use the TypeScript MCP generator.
 
-#### Two Ways to Provide Secret Key
+#### Three Ways to Provide Secret Key
 
-**Option 1: Environment Variable (Recommended for persistent setup)**
+**Option 1: Claude Desktop Config (Recommended)**
+
+Add `SIGNER_SECRET` to the `env` field in your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "{{server_name}}": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/server", "run", "server.py"],
+      "env": {
+        "CONTRACT_ID": "{{contract_id}}",
+        "SIGNER_SECRET": "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      }
+    }
+  }
+}
+```
+
+Then in conversation with Claude, call `sign_and_submit` without providing the secret key:
+
+```
+Call sign_and_submit with the xdr from the previous transaction
+```
+
+**Why this is recommended:**
+- Configuration is centralized in Claude Desktop
+- Easy to manage multiple MCP servers with different keys
+- No need to manage separate `.env` files
+
+**Option 2: Environment Variable (.env file)**
 
 Set `SIGNER_SECRET` in your `.env` file:
 
@@ -133,13 +197,9 @@ Set `SIGNER_SECRET` in your `.env` file:
 SIGNER_SECRET=SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
-Then in conversation with Claude, you can call `sign_and_submit` without providing the secret key:
+Useful for development or when running the server outside Claude Desktop.
 
-```
-Call sign_and_submit with the xdr from the previous transaction
-```
-
-**Option 2: In Conversation (Recommended for one-time operations)**
+**Option 3: In Conversation (For one-time operations)**
 
 Provide the secret key directly in the conversation when calling `sign_and_submit`:
 
@@ -149,7 +209,7 @@ Call sign_and_submit with the xdr from the previous transaction and secret_key "
 
 This is useful when:
 - You need to sign with different keys for different transactions
-- You don't want to store the key in the environment
+- You don't want to store the key in any configuration
 - You're testing or doing one-time operations
 
 ---
