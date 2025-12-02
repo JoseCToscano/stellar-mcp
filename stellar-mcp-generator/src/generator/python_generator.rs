@@ -191,6 +191,7 @@ impl<'a> PythonGenerator<'a> {
         let template = include_str!("../../templates/python/pyproject.toml.hbs");
         let data = serde_json::json!({
             "contract_name": self.contract_name,
+            "package_name": to_python_package_name(self.contract_name),
         });
 
         let mut hbs = Handlebars::new();
