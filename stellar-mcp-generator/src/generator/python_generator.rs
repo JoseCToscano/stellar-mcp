@@ -326,6 +326,9 @@ fn to_python_package_name(s: &str) -> String {
 }
 
 /// Map Soroban type to Python type hint
+/// For MCP tool signatures, we need types that Pydantic can generate JSON Schema for.
+/// Custom types (dataclasses from stellar-contract-bindings) can't be used directly,
+/// so we use Dict[str, Any] and convert them in the function body.
 fn map_type_to_python(type_ref: &crate::spec::TypeRef) -> String {
     use crate::spec::TypeRef;
 
@@ -336,14 +339,30 @@ fn map_type_to_python(type_ref: &crate::spec::TypeRef) -> String {
         TypeRef::String | TypeRef::Symbol => "str".to_string(),
         TypeRef::Address => "str".to_string(), // Address as string
         TypeRef::Bytes | TypeRef::BytesN(_) => "bytes".to_string(),
-        TypeRef::Vec(inner) => format!("List[{}]", map_type_to_python(inner)),
-        TypeRef::Option(inner) => format!("Optional[{}]", map_type_to_python(inner)),
+        TypeRef::Vec(inner) => {
+            // Check if inner type is custom (complex type)
+            if matches!(inner.as_ref(), TypeRef::Custom(_)) {
+                "List[Dict[str, Any]]".to_string()
+            } else {
+                format!("List[{}]", map_type_to_python(inner))
+            }
+        }
+        TypeRef::Option(inner) => {
+            // Check if inner type is custom (complex type)
+            if matches!(inner.as_ref(), TypeRef::Custom(_)) {
+                "Optional[Dict[str, Any]]".to_string()
+            } else {
+                format!("Optional[{}]", map_type_to_python(inner))
+            }
+        }
         TypeRef::Map { key, value } => format!("Dict[{}, {}]", map_type_to_python(key), map_type_to_python(value)),
         TypeRef::Tuple(types) => {
             let type_strs: Vec<_> = types.iter().map(|t| map_type_to_python(t)).collect();
             format!("Tuple[{}]", type_strs.join(", "))
         }
-        TypeRef::Custom(name) => name.clone(), // Use custom type name as-is
+        // Custom types (structs/enums from contract) → use Dict for Pydantic compatibility
+        // The convert_mcp_params helper will handle conversion to actual dataclass types
+        TypeRef::Custom(_name) => "Dict[str, Any]".to_string(),
         _ => "Any".to_string(), // Fallback
     }
 }
