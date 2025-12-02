@@ -68,3 +68,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "stellar-mcp"
 path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3.13"
