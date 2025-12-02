@@ -79,13 +79,10 @@ class ContractClient:
     def __init__(self, config: ContractConfig):
         self.config = config
         # Initialize generated client from stellar-contract-bindings
-        # The ClientAsync expects contract_id and SorobanServer instance
-        from stellar_sdk import SorobanServer
-
-        server = SorobanServer(config.rpc_url)
+        # The ClientAsync expects contract_id, rpc_url string, and network_passphrase
         self.client = GeneratedClient(
             contract_id=config.contract_id,
-            rpc=server,
+            rpc_url=config.rpc_url,
             network_passphrase=config.network_passphrase
         )
 
