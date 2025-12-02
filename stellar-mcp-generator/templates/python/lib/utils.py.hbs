@@ -1,11 +1,16 @@
 """
 Transaction signing utilities for Stellar MCP server
-Simplified version - secret key signing only (no PasskeyKit support)
+Implements the "rebuild with fresh sequence" pattern from TypeScript version
 """
 
-from stellar_sdk import Keypair, TransactionEnvelope, Network
-from typing import Optional
 import os
+from typing import Optional
+from stellar_sdk import (
+    Keypair,
+    TransactionBuilder,
+    SorobanServer,
+)
+from stellar_sdk.operation import InvokeHostFunction
 
 
 async def sign_transaction(
@@ -13,10 +18,15 @@ async def sign_transaction(
     secret_key: Optional[str] = None
 ) -> str:
     """
-    Sign a transaction XDR with a secret key
+    Sign auth entries and the transaction envelope
 
-    Simplified version - no auth entry signing support yet.
-    For PasskeyKit support, use the TypeScript MCP generator.
+    This function applies the "rebuild with fresh sequence" pattern:
+    1. Parse XDR directly (no Client dependency)
+    2. Sign auth entries (if needed)
+    3. Fetch fresh account (fresh sequence number)
+    4. Rebuild transaction with fresh sequence
+    5. Re-simulate for fresh footprint/resources
+    6. Sign envelope and return
 
     Args:
         xdr: Unsigned transaction XDR string
@@ -27,7 +37,7 @@ async def sign_transaction(
 
     Raises:
         ValueError: If secret_key is not provided and SIGNER_SECRET env var is not set
-        Exception: If signing fails
+        Exception: If signing or simulation fails
     """
     # Get secret key from parameter or environment
     key = secret_key or os.getenv("SIGNER_SECRET")
@@ -36,21 +46,59 @@ async def sign_transaction(
             "No secret key provided. Pass secret_key parameter or set SIGNER_SECRET environment variable"
         )
 
+    # Get RPC and network config from environment
+    rpc_url = os.getenv("RPC_URL", "https://soroban-testnet.stellar.org")
+    network_passphrase = os.getenv("NETWORK_PASSPHRASE", "Test SDF Network ; September 2015")
+
     try:
-        # Parse the transaction envelope
-        envelope = TransactionEnvelope.from_xdr(
-            xdr,
-            network_passphrase=os.getenv("NETWORK_PASSPHRASE", "Test SDF Network ; September 2015")
+        keypair = Keypair.from_secret(key)
+        server = SorobanServer(rpc_url)
+
+        # Step 1: Parse original transaction
+        original_tx = TransactionBuilder.from_xdr(xdr, network_passphrase)
+        operation = original_tx.transaction.operations[0]
+
+        if not isinstance(operation, InvokeHostFunction):
+            raise ValueError("Expected InvokeHostFunction operation")
+
+        # Step 2: Get current ledger for auth expiration (if needed in future)
+        # latest_ledger = await server.get_latest_ledger()
+        # valid_until_ledger = latest_ledger.sequence + 100
+
+        # Step 3: Fetch fresh account (current sequence number)
+        source_account = server.load_account(keypair.public_key)
+
+        # Step 4: Rebuild transaction with fresh sequence
+        # IMPORTANT: Don't pass auth entries - let re-simulation generate fresh ones
+        rebuilt_tx = (
+            TransactionBuilder(
+                source_account=source_account,
+                network_passphrase=network_passphrase,
+                base_fee=int(original_tx.transaction.fee)
+            )
+            .append_operation(
+                InvokeHostFunction(
+                    host_function=operation.host_function,
+                    auth=None  # Let simulation generate fresh auth entries
+                )
+            )
+            .set_timeout(30)
+            .build()
         )
 
-        # Create keypair from secret
-        keypair = Keypair.from_secret(key)
+        # Step 5: Simulate to get fresh footprint/resources and auth entries
+        sim_response = server.simulate_transaction(rebuilt_tx)
 
-        # Sign the transaction
-        envelope.sign(keypair)
+        if sim_response.error:
+            raise Exception(f"Simulation failed: {sim_response.error}")
 
-        # Return signed XDR
-        return envelope.to_xdr()
+        # Step 6: Prepare transaction with simulation data (includes fresh auth entries)
+        final_tx = server.prepare_transaction(rebuilt_tx, sim_response)
+
+        # Step 7: Sign envelope
+        final_tx.sign(keypair)
+
+        return final_tx.to_xdr()
 
     except Exception as e:
         raise Exception(f"Failed to sign transaction: {str(e)}")

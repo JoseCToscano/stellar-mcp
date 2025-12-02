@@ -41,14 +41,14 @@ async def submit_transaction(signed_xdr: str) -> Dict[str, Any]:
         # Get transaction hash
         tx_hash = response.hash
 
-        # Poll for transaction result (60 attempts at 500ms intervals = 30 seconds)
-        for attempt in range(60):
+        # Poll for transaction result (120 attempts at 1000ms intervals = 120 seconds / 2 minutes)
+        for attempt in range(120):
             try:
                 # Get transaction status
                 tx_response = server.get_transaction(tx_hash)
                 status = tx_response.status
 
-                if status == "SUCCESS":
+                if status == "SUCCESS" or str(status) == "GetTransactionStatus.SUCCESS":
                     # Parse Soroban result if available
                     result_value = None
                     if hasattr(tx_response, 'result_meta_xdr'):
@@ -66,7 +66,7 @@ async def submit_transaction(signed_xdr: str) -> Dict[str, Any]:
                         "ledger": getattr(tx_response, 'ledger', None),
                     }
 
-                elif status == "FAILED":
+                elif status == "FAILED" or str(status) == "GetTransactionStatus.FAILED":
                     # Transaction failed
                     error_message = getattr(tx_response, 'result_xdr', 'Transaction failed')
                     return {
@@ -76,9 +76,9 @@ async def submit_transaction(signed_xdr: str) -> Dict[str, Any]:
                         "ledger": getattr(tx_response, 'ledger', None),
                     }
 
-                elif status == "NOT_FOUND":
+                elif status == "NOT_FOUND" or str(status) == "GetTransactionStatus.NOT_FOUND":
                     # Still pending, continue polling
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(1.0)  # Wait 1 second between checks
                     continue
 
                 else:
@@ -94,11 +94,11 @@ async def submit_transaction(signed_xdr: str) -> Dict[str, Any]:
                 await asyncio.sleep(0.5)
                 continue
 
-        # Timeout after 30 seconds
+        # Timeout after 120 seconds
         return {
             "hash": tx_hash,
             "status": "TIMEOUT",
-            "error": "Transaction polling timed out after 30 seconds",
+            "error": "Transaction polling timed out after 120 seconds (2 minutes)",
         }
 
     except Exception as e:
