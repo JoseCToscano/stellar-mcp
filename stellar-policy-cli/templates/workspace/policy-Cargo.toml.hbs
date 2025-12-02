@@ -1,0 +1,18 @@
+[package]
+name = "{{policy_name}}"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = "23"
+smart-wallet-interface = { git = "https://github.com/kalepail/passkey-kit", branch = "next" }
+
+[dev-dependencies]
+
+[features]
+
+[profile.release]
+opt-level = "z"

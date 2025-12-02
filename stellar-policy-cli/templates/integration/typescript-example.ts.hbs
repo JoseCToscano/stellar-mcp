@@ -1,0 +1,149 @@
+/**
+ * {{policy_name}} Policy Integration Example
+ *
+ * This example shows how to integrate the {{policy_name}} policy contract
+ * with a Stellar smart wallet using the passkey-kit interface.
+ *
+ * Prerequisites:
+ * 1. Build the contract: make build
+ * 2. Deploy the contract: make deploy-testnet
+ * 3. Generate TypeScript bindings: make bindings
+ * 4. Install dependencies: pnpm install
+ *
+ * The bindings will be generated in the {{policy_name}}-sdk/ directory.
+ */
+
+import { Contract, Networks } from '@stellar/stellar-sdk';
+import { Client } from '../{{policy_name}}-sdk/dist/index.js'; // Generated bindings
+
+// Contract configuration
+const POLICY_CONTRACT_ID = process.env.POLICY_CONTRACT_ID || 'YOUR_DEPLOYED_CONTRACT_ID';
+const RPC_URL = 'https://soroban-testnet.stellar.org';
+const NETWORK_PASSPHRASE = Networks.TESTNET;
+
+// Initialize the policy contract client
+const policyClient = new Client({
+  contractId: POLICY_CONTRACT_ID,
+  networkPassphrase: NETWORK_PASSPHRASE,
+  rpcUrl: RPC_URL,
+});
+
+{{#if admin_managed}}
+/**
+ * Initialize the policy contract with an admin address
+ * This should be called once after deployment (admin only)
+ */
+async function initializePolicy(adminAddress: string) {
+  try {
+    const result = await policyClient.init({ admin: adminAddress });
+    console.log('✅ Policy initialized with admin:', adminAddress);
+    return result;
+  } catch (error) {
+    console.error('❌ Failed to initialize policy:', error);
+    throw error;
+  }
+}
+
+{{#if has_amount_cap}}
+/**
+ * Add a wallet to the policy allowlist (admin only)
+ * This configures per-user limits for amount caps
+ */
+async function addWalletToAllowlist(
+  userPublicKey: string,
+  maxAmount: bigint{{#if has_rate_limiting}},
+  minLedgers: number{{/if}}
+) {
+  try {
+    const result = await policyClient.add_wallet({
+      user: Buffer.from(userPublicKey, 'hex'),
+      {{#if has_amount_cap}}max_amount: maxAmount,{{/if}}
+      {{#if has_rate_limiting}}min_ledgers: minLedgers,{{/if}}
+    });
+    console.log('✅ Wallet added to allowlist:', userPublicKey);
+    return result;
+  } catch (error) {
+    console.error('❌ Failed to add wallet:', error);
+    throw error;
+  }
+}
+{{/if}}
+{{/if}}
+
+/**
+ * Example: Attach policy to smart wallet signer
+ *
+ * This shows how to configure a smart wallet signer with this policy.
+ * The policy will be enforced whenever the signer attempts to authorize transactions.
+ *
+ * Note: This requires the passkey-kit smart wallet SDK
+ */
+export async function attachPolicyToSmartWallet() {
+  // Example pseudo-code showing the integration pattern
+  // Replace with actual smart wallet SDK calls
+
+  console.log(`
+  📝 To attach this policy to a smart wallet:
+
+  1. The policy contract address: ${POLICY_CONTRACT_ID}
+
+  2. Configure signer limits in your smart wallet:
+     - Use SignerKey.Policy(policyContractId)
+     - Set limits for specific target contracts
+
+  3. Example signer configuration:
+
+     const signerLimits = new Map();
+     signerLimits.set(
+       TARGET_CONTRACT_ADDRESS,  // Contract this signer can interact with
+       [
+         {
+           type: 'Policy',
+           policy: '${POLICY_CONTRACT_ID}'
+         }
+       ]
+     );
+
+  4. Update the signer:
+     await smartWallet.updateEd25519(publicKey, signerLimits);
+
+  📚 For complete integration, see the passkey-kit documentation:
+     https://github.com/kalepail/passkey-kit
+  `);
+}
+
+/**
+ * Main example runner
+ */
+async function main() {
+  console.log('🚀 {{policy_name}} Policy Integration Example\n');
+
+  {{#if admin_managed}}
+  // Step 1: Initialize policy (admin only, run once after deployment)
+  // Uncomment and configure the admin address
+  // const adminAddress = 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+  // await initializePolicy(adminAddress);
+
+  {{#if has_amount_cap}}
+  // Step 2: Add wallets to allowlist (admin only)
+  // Uncomment and configure user settings
+  // const userPublicKey = 'hex_encoded_ed25519_public_key';
+  // const maxAmount = BigInt({{amount_cap.max_amount}});
+  {{#if has_rate_limiting}}// const minLedgers = {{rate_limiting.min_ledgers}};{{/if}}
+  // await addWalletToAllowlist(userPublicKey, maxAmount{{#if has_rate_limiting}}, minLedgers{{/if}});
+  {{/if}}
+
+  {{/if}}
+  // Step {{#if admin_managed}}3{{else}}1{{/if}}: Attach policy to smart wallet
+  await attachPolicyToSmartWallet();
+
+  console.log('\n✅ Example completed');
+}
+
+// Run the example
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((error) => {
+    console.error('Error:', error);
+    process.exit(1);
+  });
+}

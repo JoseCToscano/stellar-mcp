@@ -1,0 +1,196 @@
+#![no_std]
+use soroban_sdk::{contract, contractimpl, contracterror, contracttype, panic_with_error, Address, Bytes, BytesN, Env, Vec};
+use soroban_sdk::auth::{Context, ContractContext};
+{{#if has_function_whitelist}}
+use soroban_sdk::symbol_short;
+{{/if}}
+{{#if (or has_recipient_whitelist has_amount_cap)}}
+use soroban_sdk::TryFromVal;
+{{/if}}
+
+{{#if admin_managed}}
+mod types;
+use types::StorageKey;
+{{/if}}
+
+// Re-export SignerKey from smart-wallet-interface with export = true
+// This is required because the original has export = false, which prevents
+// Stellar CLI from being able to invoke contract functions that use SignerKey
+#[contracttype(export = true)]
+#[derive(Clone, Debug, PartialEq)]
+pub enum SignerKey {
+    Policy(Address),
+    Ed25519(BytesN<32>),
+    Secp256r1(Bytes),
+}
+
+#[contract]
+pub struct Contract;
+
+{{#if admin_managed}}
+// Admin-managed policy with persistent storage
+#[contractimpl]
+impl Contract {
+    /// Initialize the policy contract with an admin address
+    pub fn init(env: Env, admin: Address) {
+        if env.storage().persistent().has(&StorageKey::Admin) {
+            panic_with_error!(&env, Error::AlreadyInitialized);
+        }
+        env.storage().persistent().set(&StorageKey::Admin, &admin);
+    }
+
+    /// Add a wallet to the policy allowlist
+    pub fn add_wallet(
+        env: Env,
+        user: BytesN<32>,
+        {{#if has_amount_cap}}max_amount: i128,{{/if}}
+        {{#if has_rate_limiting}}min_ledgers: u32,{{/if}}
+    ) {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&StorageKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        admin.require_auth();
+
+        {{#if has_amount_cap}}
+        env.storage().persistent().set(&StorageKey::Limits(user.clone()), &max_amount);
+        {{/if}}
+        {{#if has_rate_limiting}}
+        env.storage().persistent().set(&StorageKey::MinLedgers(user.clone()), &min_ledgers);
+        {{/if}}
+    }
+}
+{{/if}}
+
+// Policy implementation
+// Note: We don't implement smart_wallet_interface::PolicyInterface trait because
+// it uses smart_wallet_interface::types::SignerKey (export = false), but we need
+// our own SignerKey (export = true) for Stellar CLI to work
+#[contractimpl]
+impl Contract {
+    pub fn policy__(env: Env, _source: Address, _signer: SignerKey, contexts: Vec<Context>) {
+        for context in contexts.iter() {
+            match context {
+                Context::Contract(ContractContext { contract, fn_name, args, .. }) => {
+                    {{#if has_function_whitelist}}
+                    // Function whitelist validation
+                    let allowed = {{#each function_whitelist}}{{#if @first}}fn_name == symbol_short!("{{this}}"){{else}} || fn_name == symbol_short!("{{this}}"){{/if}}{{/each}};
+                    if !allowed {
+                        panic_with_error!(&env, Error::NotAllowed);
+                    }
+                    {{/if}}
+
+                    {{#if has_contract_whitelist}}
+                    // Contract whitelist validation
+                    {{#each contract_whitelist}}
+                    {{#if @first}}let allowed_contract_{{@index}} = Address::from_str(&env, "{{this}}");{{else}}
+                    let allowed_contract_{{@index}} = Address::from_str(&env, "{{this}}");{{/if}}
+                    {{/each}}
+                    let contract_allowed = {{#each contract_whitelist}}{{#if @first}}contract.clone() == allowed_contract_{{@index}}{{else}} || contract.clone() == allowed_contract_{{@index}}{{/if}}{{/each}};
+                    if !contract_allowed {
+                        panic_with_error!(&env, Error::NotAllowed);
+                    }
+                    {{/if}}
+
+                    {{#if has_recipient_whitelist}}
+                    // Recipient whitelist validation (check if arg 1 is the recipient address)
+                    if let Some(recipient_val) = args.get(1) {
+                        if let Ok(recipient) = <Address as TryFromVal<Env, _>>::try_from_val(&env, &recipient_val) {
+                            {{#each recipient_whitelist}}
+                            {{#if @first}}let allowed_recipient_{{@index}} = Address::from_str(&env, "{{this}}");{{else}}
+                            let allowed_recipient_{{@index}} = Address::from_str(&env, "{{this}}");{{/if}}
+                            {{/each}}
+                            let recipient_allowed = {{#each recipient_whitelist}}{{#if @first}}recipient == allowed_recipient_{{@index}}{{else}} || recipient == allowed_recipient_{{@index}}{{/if}}{{/each}};
+                            if !recipient_allowed {
+                                panic_with_error!(&env, Error::NotAllowed);
+                            }
+                        }
+                    }
+                    {{/if}}
+
+                    {{#if has_amount_cap}}
+                    // Amount cap validation (check if arg 2 is the amount)
+                    if let Some(amount_val) = args.get(2) {
+                        if let Ok(amount) = i128::try_from_val(&env, &amount_val) {
+                            {{#if admin_managed}}
+                            let signer_bytes = match &_signer {
+                                SignerKey::Ed25519(key) => key.clone(),
+                                _ => panic_with_error!(&env, Error::NotAllowed),
+                            };
+                            let max_amount: i128 = env
+                                .storage()
+                                .persistent()
+                                .get(&StorageKey::Limits(signer_bytes))
+                                .unwrap_or({{amount_cap.max_amount}});
+                            if amount > max_amount {
+                                panic_with_error!(&env, Error::TooMuch);
+                            }
+                            {{else}}
+                            if amount > {{amount_cap.max_amount}} {
+                                panic_with_error!(&env, Error::TooMuch);
+                            }
+                            {{/if}}
+                        }
+                    }
+                    {{/if}}
+
+                    {{#if has_rate_limiting}}
+                    // Rate limiting validation
+                    let signer_bytes = match &_signer {
+                        SignerKey::Ed25519(key) => key.clone(),
+                        _ => panic_with_error!(&env, Error::NotAllowed),
+                    };
+
+                    {{#if admin_managed}}
+                    let min_ledgers: u32 = env
+                        .storage()
+                        .persistent()
+                        .get(&StorageKey::MinLedgers(signer_bytes.clone()))
+                        .unwrap_or({{rate_limiting.min_ledgers}});
+                    {{else}}
+                    let min_ledgers: u32 = {{rate_limiting.min_ledgers}};
+                    {{/if}}
+
+                    let current_ledger = env.ledger().sequence();
+                    {{#if admin_managed}}
+                    if let Some(previous_ledger) = env
+                        .storage()
+                        .persistent()
+                        .get::<StorageKey, u32>(&StorageKey::Previous(signer_bytes.clone()))
+                    {
+                        if current_ledger < previous_ledger + min_ledgers {
+                            panic_with_error!(&env, Error::TooSoon);
+                        }
+                    }
+                    env.storage()
+                        .persistent()
+                        .set(&StorageKey::Previous(signer_bytes), &current_ledger);
+                    {{/if}}
+                    {{/if}}
+                }
+                _ => {
+                    // Reject non-contract contexts
+                    panic_with_error!(&env, Error::NotAllowed);
+                }
+            }
+        }
+    }
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum Error {
+    {{#if admin_managed}}
+    AlreadyInitialized = 1,
+    NotInitialized = 2,
+    {{/if}}
+    NotAllowed = 4,
+    {{#if has_rate_limiting}}
+    TooSoon = 5,
+    {{/if}}
+    {{#if has_amount_cap}}
+    TooMuch = 6,
+    {{/if}}
+}

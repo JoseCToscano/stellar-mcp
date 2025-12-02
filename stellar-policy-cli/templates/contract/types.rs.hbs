@@ -1,0 +1,19 @@
+use soroban_sdk::{contracttype, BytesN};
+
+#[contracttype]
+pub enum StorageKey {
+    /// Admin address
+    Admin,
+    {{#if has_rate_limiting}}
+    /// Previous ledger number for rate limiting (per signer)
+    Previous(BytesN<32>),
+    {{/if}}
+    {{#if has_amount_cap}}
+    /// Amount limits (per signer)
+    Limits(BytesN<32>),
+    {{/if}}
+    {{#if has_rate_limiting}}
+    /// Minimum ledgers between transactions (per signer)
+    MinLedgers(BytesN<32>),
+    {{/if}}
+}
