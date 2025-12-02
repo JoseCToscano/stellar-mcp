@@ -117,13 +117,13 @@ class ContractClient:
         {{/if}}
 
         # Call the generated bindings method
-        # The method returns an AssembledTransaction with .transaction and .simulation
+        # The method returns an AssembledTransactionAsync object
         assembled = await self.client.{{name_snake}}({{#if inputs}}**params{{/if}})
 
         # Return transaction XDR and simulation result in MCP-compatible format
         return {
-            "xdr": assembled.transaction.to_xdr(),
-            "simulationResult": assembled.simulation if hasattr(assembled, 'simulation') else None
+            "xdr": assembled.to_xdr(),
+            "simulationResult": assembled.result() if hasattr(assembled, 'result') else None
         }
 
     {{/each}}
