@@ -33,6 +33,7 @@ def convert_mcp_params(obj: Any) -> Any:
     - None → None (Python handles Optional natively)
     - hex strings → bytes (for BytesN fields like 'salt', '*_hash', etc.)
     - numeric strings → int (for i128/u128 fields like '*_supply', 'cap', 'amount', etc.)
+    - enum dicts {"tag": "VariantName", "values": ...} → proper enum class instance
 
     This handles the same type conversions as the TypeScript generator's convertNullToUndefined.
     """
@@ -44,6 +45,52 @@ def convert_mcp_params(obj: Any) -> Any:
 
     if isinstance(obj, list):
         return [convert_mcp_params(item) for item in obj]
+
+    # Check if this dict represents an enum/variant (has "tag" key, "values" is optional)
+    if isinstance(obj, dict) and "tag" in obj:
+        tag_name = obj["tag"]
+
+        # Try to find the matching enum class in bindings
+        # Look for classes with the pattern {tag_name}Kind or direct enum classes
+        try:
+            from .bindings import bindings as bindings_module
+
+            # Try to find enum class by common patterns
+            # Pattern 1: TokenType/TokenTypeKind
+            # Pattern 2: Direct enum name
+            possible_class_names = [
+                f"{tag_name}Kind",  # TokenTypeKind
+                tag_name,            # TokenType
+            ]
+
+            enum_class = None
+            wrapper_class = None
+
+            # Search for the enum class
+            for class_name in dir(bindings_module):
+                if class_name.endswith('Kind'):
+                    # Found an enum kind class, check if it has the tag as a member
+                    potential_enum = getattr(bindings_module, class_name)
+                    if hasattr(potential_enum, tag_name):
+                        enum_class = potential_enum
+                        # Find the wrapper class (e.g., TokenType for TokenTypeKind)
+                        wrapper_name = class_name.replace('Kind', '')
+                        if hasattr(bindings_module, wrapper_name):
+                            wrapper_class = getattr(bindings_module, wrapper_name)
+                        break
+
+            if enum_class and wrapper_class:
+                # Create the enum instance: TokenType(kind=TokenTypeKind.Capped)
+                enum_value = getattr(enum_class, tag_name)
+                return wrapper_class(kind=enum_value)
+
+            # If we can't find the enum, just return the dict as-is
+            # The bindings might handle it differently
+            return obj
+
+        except (ImportError, AttributeError):
+            # If we can't import bindings or find the enum, return as-is
+            return obj
 
     result = {}
     for key, value in obj.items():
@@ -86,9 +133,9 @@ def serialize_result(result: Any) -> Any:
     if isinstance(result, list):
         return [serialize_result(item) for item in result]
 
-    # Handle stellar_sdk.Address
+    # Handle stellar_sdk.Address - extract clean address string
     if hasattr(result, '__class__') and result.__class__.__name__ == 'Address':
-        return str(result)
+        return result.address
 
     # Handle dataclasses (TokenInfo, etc.)
     if hasattr(result, '__dataclass_fields__'):
