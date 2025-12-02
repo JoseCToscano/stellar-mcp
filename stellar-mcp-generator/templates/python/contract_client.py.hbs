@@ -70,6 +70,52 @@ def convert_mcp_params(obj: Any) -> Any:
     return result
 
 
+def serialize_result(result: Any) -> Any:
+    """
+    Convert Stellar SDK types to JSON-serializable formats.
+    Handles:
+    - Address objects → string representation
+    - Dataclass objects (TokenInfo, etc.) → dict
+    - Custom classes with __dict__ → dict
+    - Lists and nested objects recursively
+    """
+    if result is None:
+        return None
+
+    # Handle lists FIRST (before checking for dataclass fields)
+    if isinstance(result, list):
+        return [serialize_result(item) for item in result]
+
+    # Handle stellar_sdk.Address
+    if hasattr(result, '__class__') and result.__class__.__name__ == 'Address':
+        return str(result)
+
+    # Handle dataclasses (TokenInfo, etc.)
+    if hasattr(result, '__dataclass_fields__'):
+        from dataclasses import asdict
+        return serialize_result(asdict(result))
+
+    # Handle custom classes (like TokenInfo from bindings) by converting to dict
+    if hasattr(result, '__dict__') and not isinstance(result, (str, int, float, bool, bytes)):
+        obj_dict = {}
+        for key, value in result.__dict__.items():
+            # Skip private/internal attributes
+            if not key.startswith('_'):
+                obj_dict[key] = serialize_result(value)
+        return obj_dict
+
+    # Handle dicts
+    if isinstance(result, dict):
+        return {key: serialize_result(value) for key, value in result.items()}
+
+    # Primitives (int, str, bool, float, bytes) are already JSON-serializable
+    # bytes need to be converted to hex string or base64
+    if isinstance(result, bytes):
+        return result.hex()
+
+    return result
+
+
 class ContractClient:
     """
     Wrapper around stellar-contract-bindings generated client
@@ -121,9 +167,10 @@ class ContractClient:
         assembled = await self.client.{{name_snake}}({{#if inputs}}**params{{/if}})
 
         # Return transaction XDR and simulation result in MCP-compatible format
+        result = assembled.result() if hasattr(assembled, 'result') else None
         return {
             "xdr": assembled.to_xdr(),
-            "simulationResult": assembled.result() if hasattr(assembled, 'result') else None
+            "simulationResult": serialize_result(result)
         }
 
     {{/each}}
