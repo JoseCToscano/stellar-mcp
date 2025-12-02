@@ -27,13 +27,14 @@ class ContractConfig:
     network_passphrase: str
 
 
-def convert_mcp_params(obj: Any) -> Any:
+def convert_mcp_params(obj: Any, type_hint: Optional[str] = None) -> Any:
     """
     Helper to convert MCP tool parameters to Stellar SDK types:
     - None → None (Python handles Optional natively)
     - hex strings → bytes (for BytesN fields like 'salt', '*_hash', etc.)
     - numeric strings → int (for i128/u128 fields like '*_supply', 'cap', 'amount', etc.)
     - enum dicts {"tag": "VariantName", "values": ...} → proper enum class instance
+    - struct dicts → proper struct/dataclass instances (e.g., TokenConfig)
 
     This handles the same type conversions as the TypeScript generator's convertNullToUndefined.
     """
@@ -92,6 +93,7 @@ def convert_mcp_params(obj: Any) -> Any:
             # If we can't import bindings or find the enum, return as-is
             return obj
 
+    # Process the dict: convert all nested values first
     result = {}
     for key, value in obj.items():
         # Convert hex strings to bytes for known Bytes fields
@@ -114,7 +116,55 @@ def convert_mcp_params(obj: Any) -> Any:
         else:
             result[key] = value
 
-    return result
+    # After converting nested values, check if this dict should be a struct object
+    # Try to find a matching struct class in bindings and instantiate it
+    try:
+        from .bindings import bindings as bindings_module
+
+        # Common struct naming patterns to try
+        # For a dict with keys like {admin, token_type, decimals, ...},
+        # try to find TokenConfig, Config, etc.
+        struct_candidates = []
+
+        # If we have a type_hint, try it first
+        if type_hint:
+            struct_candidates.append(type_hint)
+
+        # Try to infer struct name from keys
+        # Common patterns: TokenConfig, Config, etc.
+        if 'admin' in result and 'token_type' in result:
+            struct_candidates.extend(['TokenConfig', 'Config'])
+
+        # Search for any class that:
+        # 1. Has an __init__ method
+        # 2. Has all the keys in result as parameters
+        for class_name in dir(bindings_module):
+            potential_struct = getattr(bindings_module, class_name)
+
+            # Skip non-classes and internal classes
+            if not isinstance(potential_struct, type) or class_name.startswith('_'):
+                continue
+
+            # Check if this class has all the required keys
+            if hasattr(potential_struct, '__init__'):
+                try:
+                    import inspect
+                    sig = inspect.signature(potential_struct.__init__)
+                    param_names = [p for p in sig.parameters.keys() if p != 'self']
+
+                    # If all our dict keys match the constructor parameters, this is our struct!
+                    if set(result.keys()) == set(param_names):
+                        # Instantiate the struct with converted values
+                        return potential_struct(**result)
+                except (ValueError, TypeError):
+                    continue
+
+        # If we couldn't find a matching struct, return the converted dict
+        return result
+
+    except (ImportError, AttributeError):
+        # If we can't import bindings, return the converted dict
+        return result
 
 
 def serialize_result(result: Any) -> Any:
