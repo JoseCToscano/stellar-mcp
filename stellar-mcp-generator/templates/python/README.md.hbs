@@ -63,6 +63,10 @@ Edit `.env` to configure:
 CONTRACT_ID={{contract_id}}
 RPC_URL={{rpc_url}}
 NETWORK_PASSPHRASE={{network_passphrase}}
+
+# Optional: Set a default secret key for transaction signing
+# You can also provide the secret key in the conversation when calling sign_and_submit
+# SIGNER_SECRET=S...
 ```
 
 ## Running the Server
@@ -118,6 +122,35 @@ Sign a transaction XDR and submit it to the Stellar network.
 - `result` (Dict): Transaction result with status, hash, and result data
 
 **Note**: This Python MCP server only supports secret key signing. For PasskeyKit (smart wallet) support, use the TypeScript MCP generator.
+
+#### Two Ways to Provide Secret Key
+
+**Option 1: Environment Variable (Recommended for persistent setup)**
+
+Set `SIGNER_SECRET` in your `.env` file:
+
+```env
+SIGNER_SECRET=SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
+
+Then in conversation with Claude, you can call `sign_and_submit` without providing the secret key:
+
+```
+Call sign_and_submit with the xdr from the previous transaction
+```
+
+**Option 2: In Conversation (Recommended for one-time operations)**
+
+Provide the secret key directly in the conversation when calling `sign_and_submit`:
+
+```
+Call sign_and_submit with the xdr from the previous transaction and secret_key "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+```
+
+This is useful when:
+- You need to sign with different keys for different transactions
+- You don't want to store the key in the environment
+- You're testing or doing one-time operations
 
 ---
 
