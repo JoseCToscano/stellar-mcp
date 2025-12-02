@@ -36,20 +36,9 @@ uv pip install -e .
 pip install -e .
 ```
 
-## Generate Contract Bindings
-
-Before running the server, generate the Python bindings for the contract:
-
-```bash
-stellar-contract-bindings python \
-  --contract-id {{contract_id}} \
-  --rpc-url {{rpc_url}} \
-  --output ./src/bindings
-```
-
-This will create `src/bindings/bindings.py` with the contract client code.
-
 ## Configuration
+
+**Note:** Contract bindings are automatically generated in `src/bindings/` when you run the MCP generator. You don't need to run `stellar-contract-bindings` manually.
 
 Create a `.env` file from the example:
 
@@ -298,7 +287,22 @@ The TypeScript version includes complete PasskeyKit integration with wallet depl
 
 ### "Contract bindings not yet generated"
 
-Make sure you've run the `stellar-contract-bindings` command to generate `src/bindings/bindings.py`.
+The bindings should be automatically generated when you run the MCP generator. If you see this error, the `stellar-contract-bindings` package may not be installed. Install it with:
+
+```bash
+pip install stellar-contract-bindings
+# or with uv
+uv pip install stellar-contract-bindings
+```
+
+Then regenerate the MCP server, or manually run:
+
+```bash
+stellar-contract-bindings python \
+  --contract-id {{contract_id}} \
+  --rpc-url {{rpc_url}} \
+  --output ./src/bindings
+```
 
 ### Permission Errors
 
