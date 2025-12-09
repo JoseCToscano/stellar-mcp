@@ -284,7 +284,7 @@ impl<'a> PythonGenerator<'a> {
                     "doc": input.doc.as_deref().unwrap_or(""),
                     "is_custom_type": is_custom_type,
                     "custom_type_name": custom_type_name,
-                    "conversion_function": custom_type_name.as_ref().map(|name| format!("{}_to_bindings", to_snake_case(name))),
+                    "conversion_function": custom_type_name.as_ref().map(|name| format!("{}_to_bindings", name.to_lowercase())),
                 })
             }).collect();
 
