@@ -4,13 +4,100 @@ Implements the "rebuild with fresh sequence" pattern from TypeScript version
 """
 
 import os
-from typing import Optional
+from typing import Optional, Dict, Any
 from stellar_sdk import (
     Keypair,
     TransactionBuilder,
     SorobanServer,
 )
 from stellar_sdk.operation import InvokeHostFunction
+
+
+async def prepare_transaction_for_wallet(
+    original_xdr: str,
+    wallet_address: str
+) -> Dict[str, Any]:
+    """
+    Prepare transaction for wallet signing.
+
+    This function applies the "rebuild with fresh sequence" pattern:
+    1. Parse original transaction (built without specific wallet address)
+    2. Get fresh sequence number from the wallet address
+    3. Rebuild transaction with wallet as source
+    4. Re-simulate for fresh auth entries and footprint
+    5. Return wallet-ready XDR
+
+    IMPORTANT: Auth entries are tied to source account addresses. The transaction must
+    be rebuilt with the actual wallet address for proper auth generation.
+
+    Args:
+        original_xdr: Original transaction XDR (built without publicKey)
+        wallet_address: The wallet's public key (G...) to prepare transaction for
+
+    Returns:
+        Dict containing wallet_ready_xdr and simulation_result
+
+    Raises:
+        ValueError: If wallet address is invalid
+        Exception: If simulation fails
+    """
+    # Get RPC and network config from environment
+    rpc_url = os.getenv("RPC_URL", "https://soroban-testnet.stellar.org")
+    network_passphrase = os.getenv("NETWORK_PASSPHRASE", "Test SDF Network ; September 2015")
+
+    try:
+        server = SorobanServer(rpc_url)
+
+        # Step 1: Parse original transaction
+        original_tx = TransactionBuilder.from_xdr(original_xdr, network_passphrase)
+        operation = original_tx.transaction.operations[0]
+
+        if not isinstance(operation, InvokeHostFunction):
+            raise ValueError("Expected InvokeHostFunction operation")
+
+        # Step 2: Get fresh account for the wallet (this gives us a fresh sequence number)
+        source_account = server.load_account(wallet_address)
+
+        # Step 3: Rebuild transaction with wallet as source, but WITHOUT auth entries
+        # Let the simulation generate fresh auth entries
+        rebuilt_tx = (
+            TransactionBuilder(
+                source_account=source_account,
+                network_passphrase=network_passphrase,
+                base_fee=int(original_tx.transaction.fee)
+            )
+            .append_operation(
+                InvokeHostFunction(
+                    host_function=operation.host_function,
+                    auth=None  # Empty auth - let simulation fill it in
+                )
+            )
+            .set_timeout(30)
+            .build()
+        )
+
+        # Step 4: Simulate to get fresh auth entries and footprint/resources
+        sim_response = server.simulate_transaction(rebuilt_tx)
+
+        if sim_response.error:
+            raise Exception(f"Simulation failed: {sim_response.error}")
+
+        # Step 5: Assemble with simulation data (includes fresh auth entries)
+        final_tx = server.prepare_transaction(rebuilt_tx, sim_response)
+
+        # Extract simulation result info
+        simulation_result = {
+            "min_resource_fee": str(sim_response.min_resource_fee) if sim_response.min_resource_fee else "0",
+            "latest_ledger": sim_response.latest_ledger,
+        }
+
+        return {
+            "wallet_ready_xdr": final_tx.to_xdr(),
+            "simulation_result": simulation_result,
+        }
+
+    except Exception as e:
+        raise Exception(f"Failed to prepare transaction for wallet: {str(e)}")
 
 
 async def sign_transaction(

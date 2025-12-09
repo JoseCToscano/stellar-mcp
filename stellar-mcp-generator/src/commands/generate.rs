@@ -48,6 +48,10 @@ pub struct GenerateArgs {
     /// Enable verbose output for debugging
     #[arg(long, short = 'v')]
     pub verbose: bool,
+
+    /// Generate a React frontend alongside the MCP server
+    #[arg(long)]
+    pub with_frontend: bool,
 }
 
 /// Execute the generate command
@@ -64,7 +68,7 @@ pub async fn execute(args: GenerateArgs) -> Result<(), Box<dyn std::error::Error
         && args.network_passphrase.is_none();
 
     // Get configuration from wizard or flags
-    let (contract_id, network_str, output, lang, name, server_name, rpc_url, network_passphrase) = if use_wizard {
+    let (contract_id, network_str, output, lang, name, server_name, rpc_url, network_passphrase, with_frontend) = if use_wizard {
         // Run wizard to get all configuration
         let wizard_config = crate::wizard::run_wizard().await?;
 
@@ -77,6 +81,7 @@ pub async fn execute(args: GenerateArgs) -> Result<(), Box<dyn std::error::Error
             wizard_config.server_name,
             wizard_config.rpc_url,
             wizard_config.network_passphrase,
+            wizard_config.with_frontend,
         )
     } else {
         // Expert mode: use provided flags with defaults
@@ -97,6 +102,7 @@ pub async fn execute(args: GenerateArgs) -> Result<(), Box<dyn std::error::Error
             server_name,
             args.rpc_url.clone(),
             args.network_passphrase.clone(),
+            args.with_frontend,
         )
     };
 
@@ -194,18 +200,56 @@ pub async fn execute(args: GenerateArgs) -> Result<(), Box<dyn std::error::Error
 
         generator.generate(&spec, &args)?;
 
+        // Generate frontend if requested
+        if with_frontend {
+            println!();
+            println!("Generating React frontend...");
+            use crate::generator::FrontendGenerator;
+
+            let frontend_gen = FrontendGenerator::new(
+                &output,
+                &server_name,
+                &network,
+            );
+
+            frontend_gen.generate()?;
+        }
+
         println!();
         println!("MCP server generated successfully!");
-        println!();
-        println!("Next steps:");
-        println!("  1. cd {}", output.display());
-        println!("  2. pnpm install");
-        println!("  3. cp .env.example .env && edit .env");
-        println!("  4. pnpm run build");
-        println!("  5. pnpm start");
-        println!();
-        println!("To use with Claude Desktop, add to claude_desktop_config.json:");
-        println!("  See {}/README.md for configuration", output.display());
+
+        if with_frontend {
+            println!();
+            println!("✓ MCP Server + React Frontend generated!");
+            println!();
+            println!("Next steps:");
+            println!();
+            println!("  MCP Server:");
+            println!("    1. cd {}", output.display());
+            println!("    2. pnpm install");
+            println!("    3. cp .env.example .env && edit .env");
+            println!("    4. pnpm run build");
+            println!("    5. USE_HTTP=true PORT=3000 pnpm start");
+            println!();
+            println!("  Frontend:");
+            println!("    1. cd {}/frontend", output.display());
+            println!("    2. pnpm install");
+            println!("    3. cp .env.example .env");
+            println!("    4. pnpm dev");
+            println!();
+            println!("  Then open http://localhost:5173 in your browser");
+        } else {
+            println!();
+            println!("Next steps:");
+            println!("  1. cd {}", output.display());
+            println!("  2. pnpm install");
+            println!("  3. cp .env.example .env && edit .env");
+            println!("  4. pnpm run build");
+            println!("  5. pnpm start");
+            println!();
+            println!("To use with Claude Desktop, add to claude_desktop_config.json:");
+            println!("  See {}/README.md for configuration", output.display());
+        }
     } else {
         // Python generation
         use crate::generator::PythonGenerator;
@@ -219,6 +263,45 @@ pub async fn execute(args: GenerateArgs) -> Result<(), Box<dyn std::error::Error
         );
 
         generator.generate(&spec, &args)?;
+
+        // Generate frontend if requested
+        if with_frontend {
+            println!();
+            println!("Generating React frontend...");
+            use crate::generator::FrontendGenerator;
+
+            let frontend_gen = FrontendGenerator::new(
+                &output,
+                &server_name,
+                &network,
+            );
+
+            frontend_gen.generate()?;
+        }
+
+        println!();
+        println!("MCP server generated successfully!");
+
+        if with_frontend {
+            println!();
+            println!("✓ Python MCP Server + React Frontend generated!");
+            println!();
+            println!("Next steps:");
+            println!();
+            println!("  MCP Server:");
+            println!("    1. cd {}", output.display());
+            println!("    2. uv sync  # Install dependencies");
+            println!("    3. cp .env.example .env && edit .env");
+            println!("    4. USE_HTTP=true PORT=3000 uv run python server.py");
+            println!();
+            println!("  Frontend:");
+            println!("    1. cd {}/frontend", output.display());
+            println!("    2. pnpm install");
+            println!("    3. cp .env.example .env");
+            println!("    4. pnpm dev");
+            println!();
+            println!("  Then open http://localhost:5173 in your browser");
+        }
     }
 
     Ok(())

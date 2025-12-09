@@ -185,12 +185,14 @@ stellar mcp generate [OPTIONS] --contract-id <CONTRACT_ID>
 | `--server-name`        |       | Server name for MCP registration                    | `soroban-contract`                  |
 | `--rpc-url`            |       | Custom RPC URL (overrides network)                  | Network default                     |
 | `--network-passphrase` |       | Network passphrase (required with custom RPC)       | Network default                     |
+| `--with-frontend`      |       | Generate AI-powered React frontend                  | `false`                             |
 | `--force`              |       | Overwrite existing output directory                 | `false`                             |
 | `--verbose`            | `-v`  | Enable verbose debug output                         | `false`                             |
 
 **Notes**:
 - PasskeyKit integration is included by default in TypeScript servers
 - Python servers use FastMCP framework and require `stellar-contract-bindings`
+- `--with-frontend` generates an AI-powered React frontend (TypeScript only for now)
 
 #### Examples
 
@@ -212,6 +214,9 @@ stellar mcp generate -c CABC123... \
 
 # Force overwrite existing directory
 stellar mcp generate -c CABC123... --force -o ./my-mcp
+
+# With AI-powered React frontend
+stellar mcp generate -c CABC123... --with-frontend -o ./my-mcp
 ```
 
 ### `stellar mcp validate`
@@ -266,6 +271,35 @@ my-token-mcp/
 ---
 
 ## Features
+
+### AI-Powered Frontend (New!)
+
+Generate a complete React frontend with natural language chat interface:
+
+```bash
+stellar mcp generate -c CABC123... --with-frontend
+```
+
+**What You Get:**
+- 🤖 **AI Chat Interface**: Talk to your smart contract in natural language
+- 🔐 **Dual Authentication**: Wallet mode (Freighter) or Secret Key mode
+- ⚡ **Real-time Streaming**: Live AI responses with tool execution visibility
+- 🌐 **Multi-Provider**: OpenAI (GPT-4) or Anthropic (Claude)
+- 📱 **Modern Stack**: React 19, TypeScript, Vite 7, Tailwind CSS 4
+
+**Architecture:**
+```
+User → React Frontend → Express API → OpenAI/Anthropic → MCP Server → Stellar
+```
+
+**Example Interactions:**
+- "What's the current balance?"
+- "Transfer 100 tokens to GABC..."
+- "Check allowance and increase if needed"
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for full details.
+
+**Currently:** TypeScript MCP servers only. Python support coming soon!
 
 ### Automatic Tool Generation
 

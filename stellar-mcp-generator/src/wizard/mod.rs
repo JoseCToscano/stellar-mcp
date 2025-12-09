@@ -21,6 +21,7 @@ pub struct GeneratorConfig {
     pub name: Option<String>,
     pub server_name: String,
     pub lang: String,
+    pub with_frontend: bool,
 }
 
 /// Run the interactive wizard to collect generation configuration
@@ -93,8 +94,21 @@ pub async fn run_wizard() -> Result<GeneratorConfig, Box<dyn std::error::Error>>
     let lang = languages[lang_idx].to_string();
     println!();
 
-    // Step 4: Output directory
-    println!("{} {}", GEAR, style("Step 4: Output Directory").cyan().bold());
+    // Step 4: Frontend generation
+    println!("{} {}", GEAR, style("Step 4: Frontend Generation").cyan().bold());
+    println!();
+    let frontend_choices = vec!["No - MCP server only", "Yes - Generate React frontend"];
+    let frontend_idx = Select::with_theme(&theme)
+        .with_prompt("Generate a React frontend alongside the MCP server?")
+        .items(&frontend_choices)
+        .default(0)
+        .interact()?;
+
+    let with_frontend = frontend_idx == 1;
+    println!();
+
+    // Step 5: Output directory
+    println!("{} {}", GEAR, style("Step 5: Output Directory").cyan().bold());
     println!();
     let output_str: String = Input::with_theme(&theme)
         .with_prompt("Enter output directory")
@@ -104,8 +118,8 @@ pub async fn run_wizard() -> Result<GeneratorConfig, Box<dyn std::error::Error>>
     let output = PathBuf::from(output_str);
     println!();
 
-    // Step 5: Contract name (optional)
-    println!("{} {}", GEAR, style("Step 5: Contract Name (Optional)").cyan().bold());
+    // Step 6: Contract name (optional)
+    println!("{} {}", GEAR, style("Step 6: Contract Name (Optional)").cyan().bold());
     println!();
     println!("{}", style("Leave empty to use contract metadata or contract ID prefix").dim());
     let name_input: String = Input::with_theme(&theme)
@@ -120,8 +134,8 @@ pub async fn run_wizard() -> Result<GeneratorConfig, Box<dyn std::error::Error>>
     };
     println!();
 
-    // Step 6: Server name
-    println!("{} {}", GEAR, style("Step 6: MCP Server Name").cyan().bold());
+    // Step 7: Server name
+    println!("{} {}", GEAR, style("Step 7: MCP Server Name").cyan().bold());
     println!();
     let server_name: String = Input::with_theme(&theme)
         .with_prompt("Enter MCP server name")
@@ -138,6 +152,7 @@ pub async fn run_wizard() -> Result<GeneratorConfig, Box<dyn std::error::Error>>
         println!("  RPC URL: {}", style(rpc).yellow());
     }
     println!("  Language: {}", style(&lang).yellow());
+    println!("  Frontend: {}", style(if with_frontend { "Yes" } else { "No" }).yellow());
     println!("  Output: {}", style(output.display()).yellow());
     if let Some(ref n) = name {
         println!("  Contract Name: {}", style(n).yellow());
@@ -157,5 +172,6 @@ pub async fn run_wizard() -> Result<GeneratorConfig, Box<dyn std::error::Error>>
         name,
         server_name,
         lang,
+        with_frontend,
     })
 }

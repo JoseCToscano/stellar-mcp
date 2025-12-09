@@ -167,6 +167,93 @@ impl TypeRef {
             TypeRef::Custom(name) => format!("{}Schema", name),
         }
     }
+
+    /// Convert to Python/Pydantic type hint
+    pub fn to_pydantic(&self) -> String {
+        match self {
+            TypeRef::Bool => "bool".to_string(),
+            TypeRef::Void => "None".to_string(),
+            TypeRef::Status => "int".to_string(),
+            TypeRef::U32 | TypeRef::I32 => "int".to_string(),
+            TypeRef::U64 | TypeRef::I64 => "int".to_string(),
+            TypeRef::Timepoint | TypeRef::Duration => "int".to_string(),
+            TypeRef::U128 | TypeRef::I128 | TypeRef::U256 | TypeRef::I256 => "str".to_string(), // BigInt as string
+            TypeRef::Bytes => "bytes".to_string(),
+            TypeRef::String | TypeRef::Symbol => "str".to_string(),
+            TypeRef::Address => "str".to_string(),
+            TypeRef::Option(inner) => format!("Optional[{}]", inner.to_pydantic()),
+            TypeRef::Result { ok, .. } => ok.to_pydantic(), // Result mapped to ok type (errors handled separately)
+            TypeRef::Vec(inner) => format!("List[{}]", inner.to_pydantic()),
+            TypeRef::Map { key, value } => {
+                format!("Dict[{}, {}]", key.to_pydantic(), value.to_pydantic())
+            }
+            TypeRef::Tuple(types) => {
+                let type_strs: Vec<String> = types.iter().map(|t| t.to_pydantic()).collect();
+                format!("Tuple[{}]", type_strs.join(", "))
+            }
+            TypeRef::BytesN(_) => "str".to_string(), // Hex string
+            TypeRef::Custom(name) => format!("{}Schema", name), // Pydantic model name
+        }
+    }
+
+    /// Convert to Pydantic Field definition
+    pub fn to_pydantic_field(&self, field_name: &str, description: &str, required: bool) -> String {
+        let field_type = self.to_pydantic();
+        let desc_safe = description.replace('"', "\\\"").replace('\n', " ");
+
+        match self {
+            TypeRef::Address => {
+                // Validate Stellar address (56 chars, starts with G or C)
+                if required {
+                    format!(
+                        "{}: str = Field(..., min_length=56, max_length=56, description=\"{}\")",
+                        field_name, desc_safe
+                    )
+                } else {
+                    format!(
+                        "{}: Optional[str] = Field(None, min_length=56, max_length=56, description=\"{}\")",
+                        field_name, desc_safe
+                    )
+                }
+            }
+            TypeRef::BytesN(n) => {
+                // Validate hex string length (2 hex chars per byte)
+                let hex_len = n * 2;
+                if required {
+                    format!(
+                        "{}: str = Field(..., min_length={}, max_length={}, description=\"{}\")",
+                        field_name, hex_len, hex_len, desc_safe
+                    )
+                } else {
+                    format!(
+                        "{}: Optional[str] = Field(None, min_length={}, max_length={}, description=\"{}\")",
+                        field_name, hex_len, hex_len, desc_safe
+                    )
+                }
+            }
+            TypeRef::Option(_) => {
+                // Optional field with default None
+                format!(
+                    "{}: {} = Field(None, description=\"{}\")",
+                    field_name, field_type, desc_safe
+                )
+            }
+            _ => {
+                // Standard field
+                if required {
+                    format!(
+                        "{}: {} = Field(..., description=\"{}\")",
+                        field_name, field_type, desc_safe
+                    )
+                } else {
+                    format!(
+                        "{}: {} = Field(None, description=\"{}\")",
+                        field_name, field_type, desc_safe
+                    )
+                }
+            }
+        }
+    }
 }
 
 /// Custom type specification
