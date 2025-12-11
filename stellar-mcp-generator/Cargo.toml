@@ -57,6 +57,10 @@ hex = "0.4"
 # Base32 encoding (for strkey)
 base32 = "0.5"
 
+# Interactive wizard
+dialoguer = "0.11"
+console = "0.15"
+
 [lib]
 name = "stellar_mcp_generator"
 path = "src/lib.rs"
@@ -64,3 +68,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "stellar-mcp"
 path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = "3.13"

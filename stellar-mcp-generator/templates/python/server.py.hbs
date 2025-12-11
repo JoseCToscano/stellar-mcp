@@ -1,0 +1,135 @@
+"""
+{{server_name}} MCP Server
+Generated from contract: {{contract_id}}
+Network: {{network_name}}
+
+MCP server for interacting with the {{contract_name}} Soroban contract.
+"""
+
+import os
+import asyncio
+from mcp.server.fastmcp import FastMCP, Context
+from typing import Optional, Any, Dict
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Import contract client and transaction utilities
+# Note: ContractClient re-exports all types from bindings, so we can import everything from it
+from src.contract_client import *
+from src.lib.utils import sign_transaction
+from src.lib.submit import submit_transaction
+
+# Initialize MCP server
+mcp = FastMCP("{{server_name}}")
+
+# Initialize contract configuration from environment
+config = ContractConfig(
+    contract_id=os.getenv("CONTRACT_ID", "{{contract_id}}"),
+    rpc_url=os.getenv("RPC_URL", "{{rpc_url}}"),
+    network_passphrase=os.getenv("NETWORK_PASSPHRASE", "{{network_passphrase}}")
+)
+
+# Initialize contract client
+client = ContractClient(config)
+
+{{#each functions}}
+@mcp.tool()
+async def {{name_snake}}(
+    {{#each inputs}}
+    {{name_snake}}: {{py_type}},
+    {{/each}}
+    ctx: Optional[Context] = None
+) -> Dict[str, Any]:
+    """
+    {{doc}}
+    {{#if inputs}}
+
+    Parameters:
+    {{#each inputs}}
+    - {{name_snake}} ({{py_type}}): {{#if doc}}{{doc}}{{else}}Contract parameter{{/if}}
+    {{/each}}
+    {{/if}}
+
+    Returns:
+        Dict containing 'xdr' (transaction XDR) and optionally 'simulationResult'
+    """
+    if ctx:
+        await ctx.info(f"Calling {{name}} with parameters...")
+
+    try:
+        result = await client.{{name_snake}}(
+            {{#each inputs}}
+            {{name_snake}}={{name_snake}},
+            {{/each}}
+        )
+
+        if ctx:
+            await ctx.info(f"Successfully called {{name}}")
+
+        return result
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Error calling {{name}}: {str(e)}")
+        raise
+
+{{/each}}
+
+@mcp.tool()
+async def sign_and_submit(
+    xdr: str,
+    secret_key: Optional[str] = None,
+    ctx: Optional[Context] = None
+) -> Dict[str, Any]:
+    """
+    Sign a transaction XDR and submit it to the Stellar network.
+
+    This tool signs a transaction with a secret key and submits it to the network,
+    polling for the result. The secret key can be provided as a parameter or set
+    in the SIGNER_SECRET environment variable.
+
+    Note: This Python MCP server only supports secret key signing.
+    For PasskeyKit (smart wallet) support, use the TypeScript MCP generator.
+
+    Parameters:
+    - xdr (str): Unsigned transaction XDR string to sign and submit
+    - secret_key (Optional[str]): Stellar secret key (S...). If not provided, uses SIGNER_SECRET env var
+
+    Returns:
+        Dict containing transaction result with status, hash, and result data
+    """
+    if ctx:
+        await ctx.info("Signing transaction...")
+
+    try:
+        # Sign the transaction
+        signed_xdr = await sign_transaction(xdr, secret_key)
+
+        if ctx:
+            await ctx.info("Transaction signed, submitting to network...")
+
+        # Submit and poll for result
+        result = await submit_transaction(signed_xdr)
+
+        if ctx:
+            if result.get("status") == "SUCCESS":
+                await ctx.info(f"Transaction succeeded! Hash: {result.get('hash')}")
+            elif result.get("status") == "FAILED":
+                await ctx.error(f"Transaction failed: {result.get('error')}")
+            elif result.get("status") == "TIMEOUT":
+                await ctx.error("Transaction polling timed out")
+
+        return {
+            "success": result.get("status") == "SUCCESS",
+            "result": result
+        }
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Error signing/submitting transaction: {str(e)}")
+        raise
+
+
+if __name__ == "__main__":
+    # Run the MCP server using stdio transport (for Claude Desktop)
+    mcp.run()
