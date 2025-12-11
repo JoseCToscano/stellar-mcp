@@ -4,11 +4,14 @@ Generated from contract: {{contract_id}}
 Network: {{network_name}}
 
 MCP server for interacting with the {{contract_name}} Soroban contract.
+Supports both stdio (for Claude Desktop) and HTTP transport (for web frontends).
 """
 
 import os
+import sys
 import asyncio
-from mcp.server.fastmcp import FastMCP, Context
+import json
+from fastmcp import FastMCP, Context
 from typing import Optional, Any, Dict
 from dotenv import load_dotenv
 
@@ -18,11 +21,13 @@ load_dotenv()
 # Import contract client and transaction utilities
 # Note: ContractClient re-exports all types from bindings, so we can import everything from it
 from src.contract_client import *
-from src.lib.utils import sign_transaction
+from src.lib.utils import sign_transaction, prepare_transaction_for_wallet
 from src.lib.submit import submit_transaction
+from src.schemas import *  # Import Pydantic schemas for MCP tool signatures
 
-# Initialize MCP server
-mcp = FastMCP("{{server_name}}")
+# Initialize MCP server with stateless HTTP mode for frontend compatibility
+# This ensures each HTTP request is independent (no session state between requests)
+mcp = FastMCP("{{server_name}}", stateless_http=True)
 
 # Initialize contract configuration from environment
 config = ContractConfig(
@@ -38,7 +43,7 @@ client = ContractClient(config)
 @mcp.tool()
 async def {{name_snake}}(
     {{#each inputs}}
-    {{name_snake}}: {{py_type}},
+    {{name_snake}}: {{pydantic_type}},
     {{/each}}
     ctx: Optional[Context] = None
 ) -> Dict[str, Any]:
@@ -48,7 +53,7 @@ async def {{name_snake}}(
 
     Parameters:
     {{#each inputs}}
-    - {{name_snake}} ({{py_type}}): {{#if doc}}{{doc}}{{else}}Contract parameter{{/if}}
+    - {{name_snake}} ({{pydantic_type}}): {{#if doc}}{{doc}}{{else}}Contract parameter{{/if}}
     {{/each}}
     {{/if}}
 
@@ -59,9 +64,22 @@ async def {{name_snake}}(
         await ctx.info(f"Calling {{name}} with parameters...")
 
     try:
+        {{#if inputs}}
+        # Convert Pydantic schemas to binding objects where needed
+        {{#each inputs}}
+        {{#if is_custom_type}}
+        {{name_snake}}_binding = {{conversion_function}}({{name_snake}})
+        {{/if}}
+        {{/each}}
+
+        {{/if}}
         result = await client.{{name_snake}}(
             {{#each inputs}}
+            {{#if is_custom_type}}
+            {{name_snake}}={{name_snake}}_binding,
+            {{else}}
             {{name_snake}}={{name_snake}},
+            {{/if}}
             {{/each}}
         )
 
@@ -76,7 +94,7 @@ async def {{name_snake}}(
 
 {{/each}}
 
-@mcp.tool()
+@mcp.tool("sign-and-submit")
 async def sign_and_submit(
     xdr: str,
     secret_key: Optional[str] = None,
@@ -130,6 +148,128 @@ async def sign_and_submit(
         raise
 
 
+@mcp.tool("prepare-transaction")
+async def prepare_transaction(
+    xdr: str,
+    wallet_address: str,
+    tool_name: str,
+    params: Optional[Dict[str, Any]] = None,
+    simulation_result: Optional[Any] = None,
+    ctx: Optional[Context] = None
+) -> Dict[str, Any]:
+    """
+    Prepare transaction for wallet signing.
+
+    Takes XDR with dummy sequence and returns wallet-ready XDR with fresh sequence.
+    Use this when user wants to sign a transaction with their external wallet.
+
+    Parameters:
+    - xdr (str): Transaction XDR from contract function call
+    - wallet_address (str): Wallet public key (G...) to prepare transaction for
+    - tool_name (str): Name of contract function being called
+    - params (Optional[Dict]): Parameters passed to function
+    - simulation_result (Optional[Any]): Simulation result from initial call
+
+    Returns:
+        Dict containing wallet-ready XDR and transaction preview info
+    """
+    if ctx:
+        await ctx.info(f"Preparing transaction for wallet: {wallet_address[:8]}...")
+
+    try:
+        result = await prepare_transaction_for_wallet(xdr, wallet_address)
+
+        if ctx:
+            await ctx.info("Transaction prepared for wallet signing")
+
+        return {
+            "transaction": {
+                "xdr": result["wallet_ready_xdr"],
+                "network": os.getenv("NETWORK_PASSPHRASE", "{{network_passphrase}}"),
+            },
+            "data": {
+                "toolName": tool_name,
+                "params": params or {},
+                "simulationResult": simulation_result,
+            }
+        }
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Error preparing transaction: {str(e)}")
+        raise
+
+
+@mcp.tool("prepare-sign-and-submit")
+async def prepare_sign_and_submit(
+    xdr: str,
+    tool_name: str,
+    params: Optional[Dict[str, Any]] = None,
+    simulation_result: Optional[Any] = None,
+    ctx: Optional[Context] = None
+) -> Dict[str, Any]:
+    """
+    Prepare a write transaction for secret key signing.
+
+    This tool is used in SECRET KEY mode to prepare a transaction for signing.
+    It returns the XDR and metadata so the frontend can show the SecretKeySignCard.
+    The actual signing happens when the user calls sign_and_submit with their secret key.
+
+    Call this when the user wants to execute a write operation (deploy, transfer, etc.)
+    in SECRET KEY mode. Returns the XDR for the frontend to show the signing UI.
+    After user provides their secret key, call sign_and_submit to complete the transaction.
+
+    Parameters:
+    - xdr (str): Transaction XDR from contract function call
+    - tool_name (str): Name of contract function being called (e.g., deploy-token, pause)
+    - params (Optional[Dict]): Parameters passed to the contract function
+    - simulation_result (Optional[Any]): Simulation result from the contract call
+
+    Returns:
+        Dict containing the XDR and metadata for frontend display
+    """
+    if ctx:
+        await ctx.info(f"Preparing transaction for secret key signing: {tool_name}")
+
+    try:
+        # Simply return the XDR and metadata for the frontend to display
+        # No actual signing happens here - that's done by sign_and_submit
+        return {
+            "readyForSigning": True,
+            "xdr": xdr,
+            "preview": {
+                "toolName": tool_name,
+                "params": params or {},
+                "simulationResult": simulation_result,
+                "network": os.getenv("NETWORK_PASSPHRASE", "{{network_passphrase}}"),
+            }
+        }
+    except Exception as e:
+        if ctx:
+            await ctx.error(f"Error preparing transaction for signing: {str(e)}")
+        raise
+
+
+# Health check endpoint
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request):
+    """Health check endpoint for monitoring and load balancers"""
+    from starlette.responses import JSONResponse
+    return JSONResponse({"status": "ok"})
+
+
 if __name__ == "__main__":
-    # Run the MCP server using stdio transport (for Claude Desktop)
-    mcp.run()
+    # Check for HTTP transport mode
+    use_http = os.getenv("USE_HTTP", "").lower() == "true"
+    port = int(os.getenv("PORT", "3000"))
+
+    if use_http:
+        # Run with HTTP transport for web frontends
+        # FastMCP supports streamable-http transport
+        print(f"{{server_name}}-mcp MCP server running on HTTP port {port}", file=sys.stderr)
+        print(f"Health check: http://localhost:{port}/health", file=sys.stderr)
+        print(f"MCP endpoint: http://localhost:{port}/mcp", file=sys.stderr)
+        mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
+    else:
+        # Run with stdio transport (default for Claude Desktop)
+        print("{{server_name}}-mcp MCP server running on stdio", file=sys.stderr)
+        mcp.run()

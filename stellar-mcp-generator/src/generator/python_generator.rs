@@ -1,5 +1,6 @@
 //! Python MCP Server generator implementation
 
+use super::pydantic_schemas;
 use super::template_data::*;
 use crate::commands::generate::GenerateArgs;
 use crate::spec::ContractSpec;
@@ -50,6 +51,7 @@ impl<'a> PythonGenerator<'a> {
         self.generate_official_bindings()?;
 
         // Generate Python files
+        self.generate_schemas_py(spec)?;
         self.generate_server_py(spec)?;
         self.generate_contract_client(spec)?;
         self.generate_init_py()?;
@@ -187,6 +189,21 @@ impl<'a> PythonGenerator<'a> {
         Ok(())
     }
 
+    fn generate_schemas_py(&self, spec: &ContractSpec) -> Result<(), Box<dyn std::error::Error>> {
+        // Generate Pydantic schemas
+        let schemas_content = pydantic_schemas::generate_pydantic_schemas(spec);
+
+        // Generate conversion helpers
+        let conversions_content = pydantic_schemas::generate_conversion_helpers(spec);
+
+        // Combine both
+        let output = format!("{}\n{}", schemas_content, conversions_content);
+
+        fs::write(self.output_dir.join("src/schemas.py"), output)?;
+
+        Ok(())
+    }
+
     fn generate_pyproject_toml(&self) -> Result<(), Box<dyn std::error::Error>> {
         let template = include_str!("../../templates/python/pyproject.toml.hbs");
         let data = serde_json::json!({
@@ -252,11 +269,22 @@ impl<'a> PythonGenerator<'a> {
     fn create_template_data(&self, spec: &ContractSpec) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         let functions: Vec<_> = spec.functions.iter().map(|f| {
             let inputs: Vec<_> = f.inputs.iter().map(|input| {
+                let is_custom_type = matches!(input.type_ref, crate::spec::TypeRef::Custom(_));
+                let custom_type_name = if let crate::spec::TypeRef::Custom(name) = &input.type_ref {
+                    Some(name.clone())
+                } else {
+                    None
+                };
+
                 serde_json::json!({
                     "name": input.name,
                     "name_snake": to_snake_case(&input.name),
                     "py_type": map_type_to_python(&input.type_ref),
+                    "pydantic_type": input.type_ref.to_pydantic(),
                     "doc": input.doc.as_deref().unwrap_or(""),
+                    "is_custom_type": is_custom_type,
+                    "custom_type_name": custom_type_name,
+                    "conversion_function": custom_type_name.as_ref().map(|name| format!("{}_to_bindings", name.to_lowercase())),
                 })
             }).collect();
 

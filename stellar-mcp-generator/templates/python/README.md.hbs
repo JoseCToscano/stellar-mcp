@@ -123,12 +123,30 @@ Using inline `env` is recommended because:
 ### For Development
 
 ```bash
-# Run with uv
+# Run with uv (stdio mode - default)
 uv run server.py
 
 # Or with mcp dev tool
 uv run mcp dev server.py
 ```
+
+### For Web Frontends (HTTP Mode)
+
+Run with HTTP transport for integration with web applications:
+
+```bash
+# Using environment variables
+USE_HTTP=true PORT=3000 uv run server.py
+
+# Or set in .env file
+# USE_HTTP=true
+# PORT=3000
+uv run server.py
+```
+
+The HTTP server will start with:
+- Health check: `http://localhost:3000/health`
+- MCP endpoint: `http://localhost:3000/mcp`
 
 ## Available Tools
 
@@ -145,6 +163,23 @@ Sign a transaction XDR and submit it to the Stellar network.
 - `result` (Dict): Transaction result with status, hash, and result data
 
 **Note**: This Python MCP server only supports secret key signing. For PasskeyKit (smart wallet) support, use the TypeScript MCP generator.
+
+### `prepare_transaction`
+
+Prepare a transaction for external wallet signing. Use this when a user wants to sign with their connected wallet (e.g., Freighter, Lobstr) instead of providing a secret key.
+
+**Parameters:**
+- `xdr` (str): Transaction XDR from contract function call
+- `wallet_address` (str): Wallet public key (G...) to prepare transaction for
+- `tool_name` (str): Name of contract function being called
+- `params` (Optional[Dict]): Parameters passed to function
+- `simulation_result` (Optional[Any]): Simulation result from initial call
+
+**Returns:**
+- `transaction` (Dict): Contains wallet-ready `xdr` and `network`
+- `data` (Dict): Contains `toolName`, `params`, and `simulationResult` for UI display
+
+This tool rebuilds the transaction with the wallet's fresh sequence number and generates proper auth entries for wallet signing.
 
 #### Three Ways to Provide Secret Key
 
@@ -266,6 +301,8 @@ This Python MCP server **does not support PasskeyKit** (smart wallet) integratio
 
 **Python version supports:**
 - ✅ Secret key signing (standard Stellar keypairs)
+- ✅ External wallet support via `prepare_transaction` (Freighter, Lobstr, etc.)
+- ✅ HTTP transport for web frontend integration
 - ✅ Transaction building and simulation via `stellar-contract-bindings`
 - ✅ Transaction submission and result polling
 - ✅ Full contract function access
@@ -273,7 +310,6 @@ This Python MCP server **does not support PasskeyKit** (smart wallet) integratio
 **Python version does NOT support:**
 - ❌ PasskeyKit smart wallet integration
 - ❌ Passkey-based signing
-- ❌ Auth entry signing (advanced Soroban feature)
 
 **If you need PasskeyKit support**, use the TypeScript MCP generator instead:
 
