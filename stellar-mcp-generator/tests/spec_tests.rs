@@ -9,7 +9,7 @@ fn test_type_ref_to_typescript() {
     assert_eq!(TypeRef::I64.to_typescript(), "bigint");
     assert_eq!(TypeRef::String.to_typescript(), "string");
     assert_eq!(TypeRef::Address.to_typescript(), "string");
-    assert_eq!(TypeRef::Bytes.to_typescript(), "Buffer");
+    assert_eq!(TypeRef::Bytes.to_typescript(), "string"); // Hex or base64 encoded
 }
 
 #[test]

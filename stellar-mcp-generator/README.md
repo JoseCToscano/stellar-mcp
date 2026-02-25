@@ -8,7 +8,7 @@ A [Stellar CLI plugin](https://developers.stellar.org/docs/tools/cli/plugins) th
 
 ## Overview
 
-**Stellar MCP Generator** reads contract specifications from deployed Soroban contracts and generates complete TypeScript MCP servers. This allows AI assistants like Claude to:
+**Stellar MCP Generator** reads contract specifications from deployed Soroban contracts and generates complete MCP servers in **TypeScript** or **Python**. This allows AI assistants like Claude to:
 
 - Call any contract function as an MCP tool
 - Understand contract types and parameters
@@ -21,14 +21,33 @@ A [Stellar CLI plugin](https://developers.stellar.org/docs/tools/cli/plugins) th
 
 Before you begin, make sure you have the following installed:
 
-| Tool                                                    | Description                       | Version | Install Link                                                        |
-| ------------------------------------------------------- | --------------------------------- | ------- | ------------------------------------------------------------------- |
-| [Rust & Cargo](https://www.rust-lang.org/tools/install) | For installing the plugin         | Latest  | `curl https://sh.rustup.rs -sSf \| sh`                              |
-| [Stellar CLI](https://github.com/stellar/stellar-cli)   | Required for plugin system        | Latest  | [Installation Guide](https://developers.stellar.org/docs/tools/cli) |
-| [Node.js](https://nodejs.org/)                          | For running generated MCP servers | **18+** | Download from official site                                         |
-| [pnpm](https://pnpm.io/)                                | Fast, efficient package manager   | Latest  | `npm install -g pnpm`                                               |
+### Required for Installation
 
-> **Important**: Node.js 18 or higher is required for running the generated MCP servers. Verify your version with `node --version`.
+| Tool                                                    | Description                | Install Link                                                        |
+| ------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------- |
+| [Rust & Cargo](https://www.rust-lang.org/tools/install) | For installing the plugin  | `curl https://sh.rustup.rs -sSf \| sh`                              |
+| [Stellar CLI](https://github.com/stellar/stellar-cli)   | Required for plugin system | [Installation Guide](https://developers.stellar.org/docs/tools/cli) |
+
+### For TypeScript MCP Servers
+
+| Tool                           | Description                     | Version | Install Link                |
+| ------------------------------ | ------------------------------- | ------- | --------------------------- |
+| [Node.js](https://nodejs.org/) | For running TypeScript servers  | **18+** | Download from official site |
+| [pnpm](https://pnpm.io/)       | Fast, efficient package manager | Latest  | `npm install -g pnpm`       |
+
+> **Important**: Node.js 18 or higher is required. Verify with `node --version`.
+
+### For Python MCP Servers
+
+| Tool                                                                            | Description                                   | Version   | Install Link                |
+| ------------------------------------------------------------------------------- | --------------------------------------------- | --------- | --------------------------- |
+| [Python](https://www.python.org/)                                               | For running Python servers                    | **3.10+** | Download from official site |
+| [uv](https://docs.astral.sh/uv/)                                                | Fast Python package manager (recommended)     | Latest    | `pip install uv`            |
+| [stellar-contract-bindings](https://pypi.org/project/stellar-contract-bindings/) | For generating type-safe Python bindings (auto-called by generator) | **0.5.0+** | `pip install stellar-contract-bindings` |
+
+> **Important**:
+> - Python 3.10 or higher is required. Verify with `python --version`.
+> - `stellar-contract-bindings` is required for Python generation. Install with `pip install stellar-contract-bindings` or `uv pip install stellar-contract-bindings`.
 
 ---
 
@@ -70,38 +89,57 @@ The `mcp` plugin should be listed among your installed plugins.
 
 ## Quickstart
 
-### 1. Generate an MCP Server
+### TypeScript MCP Server
 
 ```bash
+# 1. Generate the server (default is TypeScript)
 stellar mcp generate \
   --contract-id <Contract ID> \
   --network testnet \
   --output ./my-token-mcp \
   --name my-token
-```
 
-### 2. Install Dependencies
-
-```bash
+# 2. Install dependencies
 cd my-token-mcp
 pnpm install
-```
 
-### 3. Configure Environment
-
-```bash
+# 3. Configure environment
 cp .env.example .env
 # Edit .env with your credentials (LAUNCHTUBE_JWT, etc.)
-```
 
-### 4. Build and Run
-
-```bash
+# 4. Build and run
 pnpm run build
 pnpm start
 ```
 
-### 5. Connect to Claude Desktop
+### Python MCP Server
+
+```bash
+# 1. Generate the server with --lang python (bindings auto-generated)
+stellar mcp generate \
+  --contract-id <Contract ID> \
+  --network testnet \
+  --lang python \
+  --output ./my-token-mcp \
+  --name my-token
+
+# 2. Install dependencies
+cd my-token-mcp
+uv sync
+
+# 3. Configure environment
+cp .env.example .env
+# Edit .env with your contract details
+
+# 4. Run the server
+uv run mcp install server.py
+```
+
+> **Note**: Python bindings are automatically generated using `stellar-contract-bindings`. If the package is not installed, the generator will show installation instructions.
+
+---
+
+## Connect to Claude Desktop
 
 Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
@@ -140,22 +178,30 @@ stellar mcp generate [OPTIONS] --contract-id <CONTRACT_ID>
 | Flag                   | Short | Description                                         | Default                             |
 | ---------------------- | ----- | --------------------------------------------------- | ----------------------------------- |
 | `--contract-id`        | `-c`  | Contract ID to generate server for                  | **Required**                        |
+| `--lang`               | `-l`  | Language: `typescript` or `python`                  | `typescript`                        |
 | `--network`            | `-n`  | Network: `testnet`, `mainnet`, `futurenet`, `local` | `testnet`                           |
 | `--output`             | `-o`  | Output directory for generated server               | `./mcp-server`                      |
 | `--name`               |       | Contract name for tool naming                       | From metadata or contract ID prefix |
 | `--server-name`        |       | Server name for MCP registration                    | `soroban-contract`                  |
 | `--rpc-url`            |       | Custom RPC URL (overrides network)                  | Network default                     |
 | `--network-passphrase` |       | Network passphrase (required with custom RPC)       | Network default                     |
+| `--with-frontend`      |       | Generate AI-powered React frontend                  | `false`                             |
 | `--force`              |       | Overwrite existing output directory                 | `false`                             |
 | `--verbose`            | `-v`  | Enable verbose debug output                         | `false`                             |
 
-**Note**: PasskeyKit integration is included by default in all generated servers.
+**Notes**:
+- PasskeyKit integration is included by default in TypeScript servers
+- Python servers use FastMCP framework and require `stellar-contract-bindings`
+- `--with-frontend` generates an AI-powered React frontend (TypeScript only for now)
 
 #### Examples
 
 ```bash
-# Basic generation
+# Basic TypeScript generation (default)
 stellar mcp generate -c CABC123... -n testnet -o ./my-mcp
+
+# Python server
+stellar mcp generate -c CABC123... -l python -o ./my-python-mcp
 
 # With custom name
 stellar mcp generate -c CABC123... --name nft-factory -o ./nft-mcp
@@ -168,6 +214,9 @@ stellar mcp generate -c CABC123... \
 
 # Force overwrite existing directory
 stellar mcp generate -c CABC123... --force -o ./my-mcp
+
+# With AI-powered React frontend
+stellar mcp generate -c CABC123... --with-frontend -o ./my-mcp
 ```
 
 ### `stellar mcp validate`
@@ -222,6 +271,35 @@ my-token-mcp/
 ---
 
 ## Features
+
+### AI-Powered Frontend (New!)
+
+Generate a complete React frontend with natural language chat interface:
+
+```bash
+stellar mcp generate -c CABC123... --with-frontend
+```
+
+**What You Get:**
+- 🤖 **AI Chat Interface**: Talk to your smart contract in natural language
+- 🔐 **Dual Authentication**: Wallet mode (Freighter) or Secret Key mode
+- ⚡ **Real-time Streaming**: Live AI responses with tool execution visibility
+- 🌐 **Multi-Provider**: OpenAI (GPT-4) or Anthropic (Claude)
+- 📱 **Modern Stack**: React 19, TypeScript, Vite 7, Tailwind CSS 4
+
+**Architecture:**
+```
+User → React Frontend → Express API → OpenAI/Anthropic → MCP Server → Stellar
+```
+
+**Example Interactions:**
+- "What's the current balance?"
+- "Transfer 100 tokens to GABC..."
+- "Check allowance and increase if needed"
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for full details.
+
+**Currently:** TypeScript MCP servers only. Python support coming soon!
 
 ### Automatic Tool Generation
 

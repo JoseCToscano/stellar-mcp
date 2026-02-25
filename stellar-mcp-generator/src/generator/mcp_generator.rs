@@ -149,20 +149,23 @@ impl<'a> McpGenerator<'a> {
     fn render_index_template(
         &self,
         functions: &[FunctionTemplateData],
-        args: &GenerateArgs,
+        _args: &GenerateArgs,
     ) -> Result<String, Box<dyn std::error::Error>> {
         let mut content = String::new();
 
         // Imports (shebang added by esbuild via --banner)
         content.push_str("import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';\n");
         content.push_str("import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';\n");
+        content.push_str("import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';\n");
         content.push_str("import { z } from 'zod';\n");
+        content.push_str("import express from 'express';\n");
+        content.push_str("import cors from 'cors';\n");
         content.push_str(&format!("import * as tools from './tools/{}.js';\n", self.contract_name));
         content.push_str(&format!("import * as schemas from './schemas/{}.js';\n", self.contract_name));
 
         // Import transaction helpers
         content.push_str("import { submitTransaction } from './lib/submit.js';\n");
-        content.push_str("import { signTransaction } from './lib/utils.js';\n");
+        content.push_str("import { prepareTransactionForWallet, signTransaction } from './lib/utils.js';\n");
         content.push_str("import { signAndSendWithPasskey } from './lib/passkey.js';\n");
         content.push_str("\n");
 
@@ -180,12 +183,21 @@ impl<'a> McpGenerator<'a> {
         content.push_str("    typeof value === 'bigint' ? value.toString() : value, space);\n");
         content.push_str("};\n\n");
 
-        // Server initialization
-        content.push_str("// Initialize MCP server\n");
-        content.push_str("const server = new McpServer({\n");
-        content.push_str(&format!("  name: '{}-mcp',\n", self.server_name));
-        content.push_str("  version: '1.0.0',\n");
-        content.push_str("});\n\n");
+        // Factory function to create MCP server instance
+        content.push_str("// Factory function to create and configure an MCP server instance\n");
+        content.push_str("function createMcpServer(): McpServer {\n");
+        content.push_str("  const server = new McpServer({\n");
+        content.push_str(&format!("    name: '{}-mcp',\n", self.server_name));
+        content.push_str("    version: '1.0.0',\n");
+        content.push_str("  });\n\n");
+        content.push_str("  // Register all tools on this server instance\n");
+        content.push_str("  registerTools(server);\n\n");
+        content.push_str("  return server;\n");
+        content.push_str("}\n\n");
+
+        // Start registerTools function
+        content.push_str("// Function to register all tools on a server instance\n");
+        content.push_str("function registerTools(server: McpServer): void {\n\n");
 
         // Generate tool registrations
         for func in functions {
@@ -312,13 +324,188 @@ impl<'a> McpGenerator<'a> {
         content.push_str("  }\n");
         content.push_str(");\n\n");
 
-        // Main function
-        content.push_str("// Start server\n");
+        // Prepare transaction tool (for wallet mode) - always included for external wallet support
+        content.push_str("// Tool: prepare-transaction\n");
+        content.push_str("server.tool(\n");
+        content.push_str("  'prepare-transaction',\n");
+        content.push_str("  'Prepare transaction for wallet signing. Takes XDR with dummy sequence and returns wallet-ready XDR with fresh sequence. Use this when user wants to sign a transaction with their wallet.',\n");
+        content.push_str("  {\n");
+        content.push_str("    xdr: z.string().describe('Transaction XDR from contract function call'),\n");
+        content.push_str("    walletAddress: z.string().describe('Wallet public key (G...) to prepare transaction for'),\n");
+        content.push_str("    toolName: z.string().describe('Name of contract function being called'),\n");
+        content.push_str("    params: z.record(z.any()).optional().describe('Parameters passed to function'),\n");
+        content.push_str("    simulationResult: z.any().optional().describe('Simulation result from initial call'),\n");
+        content.push_str("  },\n");
+        content.push_str("  async ({ xdr, walletAddress, toolName, params, simulationResult }) => {\n");
+        content.push_str("    try {\n");
+        content.push_str("      const result = await prepareTransactionForWallet(xdr, walletAddress);\n\n");
+        content.push_str("      return {\n");
+        content.push_str("        content: [{\n");
+        content.push_str("          type: 'text',\n");
+        content.push_str("          text: jsonStringify({\n");
+        content.push_str("            walletReadyXdr: result.walletReadyXdr,\n");
+        content.push_str("            preview: {\n");
+        content.push_str("              toolName,\n");
+        content.push_str("              params,\n");
+        content.push_str("              simulationResult,\n");
+        content.push_str("              network: NETWORK_PASSPHRASE,\n");
+        content.push_str("            },\n");
+        content.push_str("          }),\n");
+        content.push_str("        }],\n");
+        content.push_str("      };\n");
+        content.push_str("    } catch (error) {\n");
+        content.push_str("      return {\n");
+        content.push_str("        content: [{\n");
+        content.push_str("          type: 'text',\n");
+        content.push_str("          text: jsonStringify({\n");
+        content.push_str("            error: 'Transaction preparation failed',\n");
+        content.push_str("            message: error instanceof Error ? error.message : 'Unknown error',\n");
+        content.push_str("          }),\n");
+        content.push_str("        }],\n");
+        content.push_str("      };\n");
+        content.push_str("    }\n");
+        content.push_str("  }\n");
+        content.push_str(");\n\n");
+
+        // Prepare sign and submit tool (for secret key mode) - always included for frontend support
+        content.push_str("// Tool: prepare-sign-and-submit\n");
+        content.push_str("// This tool is used in SECRET KEY mode to prepare a transaction for signing.\n");
+        content.push_str("// It returns the XDR and metadata so the frontend can show the SecretKeySignCard.\n");
+        content.push_str("// The actual signing happens when the user calls sign-and-submit with their secret key.\n");
+        content.push_str("server.tool(\n");
+        content.push_str("  'prepare-sign-and-submit',\n");
+        content.push_str("  'Prepare a write transaction for secret key signing. Call this when the user wants to execute a write operation (deploy, transfer, etc.) in SECRET KEY mode. Returns the XDR for the frontend to show the signing UI. After user provides their secret key, call sign-and-submit to complete the transaction.',\n");
+        content.push_str("  {\n");
+        content.push_str("    xdr: z.string().describe('Transaction XDR from contract function call'),\n");
+        content.push_str("    toolName: z.string().describe('Name of contract function being called (e.g., deploy-token, pause)'),\n");
+        content.push_str("    params: z.record(z.any()).optional().describe('Parameters passed to the contract function'),\n");
+        content.push_str("    simulationResult: z.any().optional().describe('Simulation result from the contract call'),\n");
+        content.push_str("  },\n");
+        content.push_str("  async ({ xdr, toolName, params, simulationResult }) => {\n");
+        content.push_str("    try {\n");
+        content.push_str("      // Simply return the XDR and metadata for the frontend to display\n");
+        content.push_str("      // No actual signing happens here - that's done by sign-and-submit\n");
+        content.push_str("      return {\n");
+        content.push_str("        content: [{\n");
+        content.push_str("          type: 'text',\n");
+        content.push_str("          text: jsonStringify({\n");
+        content.push_str("            readyForSigning: true,\n");
+        content.push_str("            xdr,\n");
+        content.push_str("            preview: {\n");
+        content.push_str("              toolName,\n");
+        content.push_str("              params,\n");
+        content.push_str("              simulationResult,\n");
+        content.push_str("              network: NETWORK_PASSPHRASE,\n");
+        content.push_str("            },\n");
+        content.push_str("          }),\n");
+        content.push_str("        }],\n");
+        content.push_str("      };\n");
+        content.push_str("    } catch (error) {\n");
+        content.push_str("      return {\n");
+        content.push_str("        content: [{\n");
+        content.push_str("          type: 'text',\n");
+        content.push_str("          text: jsonStringify({\n");
+        content.push_str("            error: 'Transaction preparation failed',\n");
+        content.push_str("            message: error instanceof Error ? error.message : 'Unknown error',\n");
+        content.push_str("          }),\n");
+        content.push_str("        }],\n");
+        content.push_str("      };\n");
+        content.push_str("    }\n");
+        content.push_str("  }\n");
+        content.push_str(");\n");
+
+        // Close registerTools function
+        content.push_str("} // End of registerTools function\n\n");
+
+        // Main function with dual transport support using StreamableHTTPServerTransport
+        content.push_str("// Start server with stdio or HTTP transport\n");
         content.push_str("async function main() {\n");
-        content.push_str("  const transport = new StdioServerTransport();\n");
-        content.push_str("  await server.connect(transport);\n");
-        content.push_str(&format!("  console.error('{}-mcp MCP server running on stdio');\n", self.server_name));
+        content.push_str("  const useHttp = process.env.USE_HTTP === 'true';\n");
+        content.push_str("  const port = process.env.PORT ? parseInt(process.env.PORT) : 3000;\n\n");
+
+        content.push_str("  if (useHttp) {\n");
+        content.push_str("    // HTTP mode with StreamableHTTP transport - STATELESS mode\n");
+        content.push_str("    // Each request creates a new server/transport pair\n");
+        content.push_str("    const app = express();\n");
+        content.push_str("    app.use(cors({\n");
+        content.push_str("      origin: '*',\n");
+        content.push_str("      methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],\n");
+        content.push_str("      allowedHeaders: ['Content-Type', 'Accept', 'mcp-session-id'],\n");
+        content.push_str("      exposedHeaders: ['mcp-session-id'],\n");
+        content.push_str("    }));\n");
+        content.push_str("    app.use(express.json());\n\n");
+
+        content.push_str("    app.get('/health', (_req, res) => {\n");
+        content.push_str("      res.json({ status: 'ok' });\n");
+        content.push_str("    });\n\n");
+
+        // POST endpoint - handles all MCP requests in stateless mode
+        content.push_str("    // POST endpoint - handles all MCP requests in stateless mode\n");
+        content.push_str("    app.post('/mcp', async (req, res) => {\n");
+        content.push_str("      console.error(`[MCP] POST request - stateless mode`);\n\n");
+        content.push_str("      try {\n");
+        content.push_str("        // Create a fresh transport and server for EVERY request (true stateless)\n");
+        content.push_str("        const transport = new StreamableHTTPServerTransport({\n");
+        content.push_str("          sessionIdGenerator: undefined, // STATELESS - no sessions\n");
+        content.push_str("        });\n\n");
+        content.push_str("        const server = createMcpServer();\n");
+        content.push_str("        await server.connect(transport);\n\n");
+        content.push_str("        // Handle the request\n");
+        content.push_str("        await transport.handleRequest(req, res, req.body);\n");
+        content.push_str("      } catch (error) {\n");
+        content.push_str("        console.error('[MCP] POST error:', error);\n");
+        content.push_str("        if (!res.headersSent) {\n");
+        content.push_str("          res.status(500).json({\n");
+        content.push_str("            jsonrpc: '2.0',\n");
+        content.push_str("            error: { code: -32603, message: 'Internal server error' },\n");
+        content.push_str("            id: null\n");
+        content.push_str("          });\n");
+        content.push_str("        }\n");
+        content.push_str("      }\n");
+        content.push_str("    });\n\n");
+
+        // GET endpoint - return empty SSE stream for stateless mode compatibility
+        content.push_str("    // GET endpoint - return empty SSE stream for stateless mode compatibility\n");
+        content.push_str("    // This is needed because AI SDK's HTTP transport always tries to open SSE after tool calls\n");
+        content.push_str("    app.get('/mcp', async (_req, res) => {\n");
+        content.push_str("      console.error(`[MCP] GET request - returning empty SSE stream`);\n");
+        content.push_str("      res.setHeader('Content-Type', 'text/event-stream');\n");
+        content.push_str("      res.setHeader('Cache-Control', 'no-cache');\n");
+        content.push_str("      res.setHeader('Connection', 'keep-alive');\n");
+        content.push_str("      // Send a heartbeat comment then immediately end\n");
+        content.push_str("      res.write(': heartbeat\\n\\n');\n");
+        content.push_str("      // Keep connection open briefly to satisfy client\n");
+        content.push_str("      setTimeout(() => {\n");
+        content.push_str("        res.end();\n");
+        content.push_str("      }, 100);\n");
+        content.push_str("    });\n\n");
+
+        // DELETE endpoint
+        content.push_str("    // DELETE endpoint\n");
+        content.push_str("    app.delete('/mcp', async (_req, res) => {\n");
+        content.push_str("      console.error(`[MCP] DELETE request - no-op in stateless mode`);\n");
+        content.push_str("      res.status(200).json({\n");
+        content.push_str("        jsonrpc: '2.0',\n");
+        content.push_str("        result: {},\n");
+        content.push_str("        id: null\n");
+        content.push_str("      });\n");
+        content.push_str("    });\n\n");
+
+        content.push_str("    app.listen(port, () => {\n");
+        content.push_str(&format!("      console.error('{}-mcp MCP server running on HTTP port', port);\n", self.server_name));
+        content.push_str("      console.error('Mode: STATELESS (no sessions)');\n");
+        content.push_str("      console.error('Health check: http://localhost:' + port + '/health');\n");
+        content.push_str("      console.error('MCP endpoint: http://localhost:' + port + '/mcp');\n");
+        content.push_str("    });\n");
+        content.push_str("  } else {\n");
+        content.push_str("    // Stdio mode (default for Claude Desktop)\n");
+        content.push_str("    const server = createMcpServer();\n");
+        content.push_str("    const transport = new StdioServerTransport();\n");
+        content.push_str("    await server.connect(transport);\n");
+        content.push_str(&format!("    console.error('{}-mcp MCP server running on stdio');\n", self.server_name));
+        content.push_str("  }\n");
         content.push_str("}\n\n");
+
         content.push_str("main().catch((error) => {\n");
         content.push_str("  console.error('Fatal error:', error);\n");
         content.push_str("  process.exit(1);\n");
@@ -690,6 +877,107 @@ const NETWORK_PASSPHRASE =
   process.env.NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015';
 
 /**
+ * Result of preparing a transaction for wallet signing
+ */
+export interface PrepareTransactionResult {
+  walletReadyXdr: string;
+  simulationResult: {
+    minResourceFee: string;
+    cost: {
+      cpuInsns: string;
+      memBytes: string;
+    };
+    latestLedger: number;
+  };
+}
+
+/**
+ * Prepare a transaction for wallet signing by re-simulating with the wallet's address
+ *
+ * This is needed because the original XDR was built with a dummy/null source account.
+ * For wallet signing, we need to:
+ * 1. Parse the original transaction to get the contract call details
+ * 2. Rebuild the transaction with the wallet's public key as source
+ * 3. Re-simulate to get fresh auth entries, footprint and resources
+ * 4. The simulation will return auth entries that the wallet needs to sign
+ *
+ * NOTE: This approach works because `assembleTransaction` pulls the auth entries
+ * from the simulation response. The simulation generates auth entries based on
+ * what `require_auth` calls are made during the simulated execution. Since the
+ * function args contain the deployer address (not the source account), the auth
+ * entries will be for that deployer address - which should match the wallet.
+ *
+ * IMPORTANT: The deployer address in the function args MUST match the wallet address.
+ * If they don't match, the simulation will generate auth entries for the wrong address
+ * and the wallet won't be able to sign them.
+ *
+ * @param xdr - Original transaction XDR (built without publicKey)
+ * @param walletAddress - The wallet's public key (G...) to prepare transaction for
+ * @returns Wallet-ready XDR and simulation result
+ */
+export async function prepareTransactionForWallet(
+  originalXdr: string,
+  walletAddress: string
+): Promise<PrepareTransactionResult> {
+  const server = new rpc.Server(RPC_URL, { allowHttp: true });
+
+  // Step 1: Parse original transaction
+  const originalTx = TransactionBuilder.fromXDR(originalXdr, NETWORK_PASSPHRASE);
+  const operation = originalTx.operations[0] as Operation.InvokeHostFunction;
+
+  // Step 2: Get fresh account for the wallet (this gives us a fresh sequence number)
+  const sourceAccount = await server.getAccount(walletAddress);
+
+  // Step 3: Rebuild transaction with wallet as source, but WITHOUT auth entries
+  // Let the simulation generate fresh auth entries
+  const rebuiltTx = new TransactionBuilder(sourceAccount, {
+    fee: originalTx.fee,
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(
+      Operation.invokeHostFunction({
+        func: operation.func,
+        auth: [], // Empty auth - let simulation fill it in
+      })
+    )
+    .setTimeout(30)
+    .build();
+
+  // Step 4: Simulate to get fresh auth entries and footprint/resources
+  const simResponse = await server.simulateTransaction(rebuiltTx);
+  if (rpc.Api.isSimulationError(simResponse)) {
+    throw new Error(`Simulation failed: ${simResponse.error}`);
+  }
+
+  // Step 5: Assemble with simulation data
+  // This pulls auth entries from simResponse.result.auth
+  const finalTx = rpc.assembleTransaction(rebuiltTx, simResponse).build();
+
+  // Extract simulation result info
+  const successResponse = simResponse as rpc.Api.SimulateTransactionSuccessResponse;
+
+  // Extract cost information, being defensive since types don't specify cost/mem usage directly
+  let cpuInsns = '0';
+  let memBytes = '0';
+  if (successResponse.result && typeof (successResponse.result as any).cost === "object") {
+    cpuInsns = (successResponse.result as any).cost?.cpuInsns ?? '0';
+    memBytes = (successResponse.result as any).cost?.memBytes ?? '0';
+  }
+
+  return {
+    walletReadyXdr: finalTx.toXDR(),
+    simulationResult: {
+      minResourceFee: successResponse.minResourceFee || '0',
+      cost: {
+        cpuInsns,
+        memBytes,
+      },
+      latestLedger: successResponse.latestLedger,
+    },
+  };
+}
+
+/**
  * Sign auth entries and optionally the transaction envelope
  *
  * This function applies the "rebuild with fresh sequence" pattern:
@@ -955,21 +1243,26 @@ export async function signAndSendWithPasskey(
             "zod": "^3.23.0",
             "dotenv": "^16.4.0",
             "passkey-kit": "^0.10.19",
-            "passkey-kit-sdk": "^0.7.2"
+            "passkey-kit-sdk": "^0.7.2",
+            "express": "^4.18.2",
+            "cors": "^2.8.5"
         });
 
         let scripts = serde_json::json!({
             "build:bindings": "cd src/bindings && pnpm install && pnpm build",
-            "build:server": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/sdk --external:@stellar/stellar-sdk --external:zod --external:dotenv --banner:js=\"#!/usr/bin/env node\"",
+            "build:server": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/sdk --external:@stellar/stellar-sdk --external:zod --external:dotenv --external:express --external:cors --banner:js=\"#!/usr/bin/env node\"",
             "build": "pnpm run build:bindings && pnpm run build:server",
             "start": "node dist/index.js",
-            "dev": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/sdk --external:@stellar/stellar-sdk --external:zod --external:dotenv --banner:js=\"#!/usr/bin/env node\" --watch",
+            "start:http": "USE_HTTP=true PORT=3000 node dist/index.js",
+            "dev": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/sdk --external:@stellar/stellar-sdk --external:zod --external:dotenv --external:express --external:cors --banner:js=\"#!/usr/bin/env node\" --watch",
             "deploy-passkey": "tsx deploy-wallet.ts",
             "typecheck": "tsc --noEmit"
         });
 
         let dev_deps = serde_json::json!({
             "@types/node": "^22.0.0",
+            "@types/express": "^4.17.17",
+            "@types/cors": "^2.8.13",
             "typescript": "^5.5.0",
             "esbuild": "^0.24.0",
             "tsx": "^4.19.0"

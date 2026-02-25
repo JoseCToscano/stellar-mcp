@@ -1,0 +1,280 @@
+"""
+Contract client for {{contract_name}}
+Wraps stellar-contract-bindings generated code with MCP-friendly interface
+"""
+
+import re
+from typing import Any, Dict, Optional, Union, List, TYPE_CHECKING
+from dataclasses import dataclass
+
+# Import the generated bindings from stellar-contract-bindings
+try:
+    from .bindings.bindings import ClientAsync as GeneratedClient
+    # Import all types from bindings module to make them available for type hints
+    from .bindings.bindings import *
+except ImportError:
+    raise ImportError(
+        "Contract bindings not found. "
+        "Please run: stellar-contract-bindings python --contract-id {{contract_id}} "
+        "--rpc-url {{rpc_url}} --output ./src/bindings"
+    )
+
+@dataclass
+class ContractConfig:
+    """Configuration for the Soroban contract"""
+    contract_id: str
+    rpc_url: str
+    network_passphrase: str
+
+
+def convert_mcp_params(obj: Any, type_hint: Optional[str] = None) -> Any:
+    """
+    Helper to convert MCP tool parameters to Stellar SDK types:
+    - None → None (Python handles Optional natively)
+    - hex strings → bytes (for BytesN fields like 'salt', '*_hash', etc.)
+    - numeric strings → int (for i128/u128 fields like '*_supply', 'cap', 'amount', etc.)
+    - enum dicts {"tag": "VariantName", "values": ...} → proper enum class instance
+    - struct dicts → proper struct/dataclass instances (e.g., TokenConfig)
+
+    This handles the same type conversions as the TypeScript generator's convertNullToUndefined.
+    """
+    if obj is None:
+        return None
+
+    if not isinstance(obj, (dict, list)):
+        return obj
+
+    if isinstance(obj, list):
+        return [convert_mcp_params(item) for item in obj]
+
+    # Check if this dict represents an enum/variant (has "tag" key, "values" is optional)
+    if isinstance(obj, dict) and "tag" in obj:
+        tag_name = obj["tag"]
+
+        # Try to find the matching enum class in bindings
+        # Look for classes with the pattern {tag_name}Kind or direct enum classes
+        try:
+            from .bindings import bindings as bindings_module
+
+            # Try to find enum class by common patterns
+            # Pattern 1: TokenType/TokenTypeKind
+            # Pattern 2: Direct enum name
+            possible_class_names = [
+                f"{tag_name}Kind",  # TokenTypeKind
+                tag_name,            # TokenType
+            ]
+
+            enum_class = None
+            wrapper_class = None
+
+            # Search for the enum class
+            for class_name in dir(bindings_module):
+                if class_name.endswith('Kind'):
+                    # Found an enum kind class, check if it has the tag as a member
+                    potential_enum = getattr(bindings_module, class_name)
+                    if hasattr(potential_enum, tag_name):
+                        enum_class = potential_enum
+                        # Find the wrapper class (e.g., TokenType for TokenTypeKind)
+                        wrapper_name = class_name.replace('Kind', '')
+                        if hasattr(bindings_module, wrapper_name):
+                            wrapper_class = getattr(bindings_module, wrapper_name)
+                        break
+
+            if enum_class and wrapper_class:
+                # Create the enum instance: TokenType(kind=TokenTypeKind.Capped)
+                enum_value = getattr(enum_class, tag_name)
+                return wrapper_class(kind=enum_value)
+
+            # If we can't find the enum, just return the dict as-is
+            # The bindings might handle it differently
+            return obj
+
+        except (ImportError, AttributeError):
+            # If we can't import bindings or find the enum, return as-is
+            return obj
+
+    # Process the dict: convert all nested values first
+    result = {}
+    for key, value in obj.items():
+        # Convert hex strings to bytes for known Bytes fields
+        if (isinstance(value, str) and
+            (key == 'salt' or key.endswith('_hash') or key.endswith('_wasm')) and
+            re.match(r'^[0-9a-fA-F]+$', value)):
+            result[key] = bytes.fromhex(value)
+
+        # Convert numeric strings to int for known i128/u128 fields
+        elif (isinstance(value, str) and
+              ('supply' in key or key in ('cap', 'amount', 'balance', 'value') or
+               '_amount' in key or '_balance' in key) and
+              re.match(r'^-?[0-9]+$', value)):
+            result[key] = int(value)
+
+        # Recursively convert nested objects
+        elif isinstance(value, (dict, list)):
+            result[key] = convert_mcp_params(value)
+
+        else:
+            result[key] = value
+
+    # After converting nested values, check if this dict should be a struct object
+    # Try to find a matching struct class in bindings and instantiate it
+    try:
+        from .bindings import bindings as bindings_module
+
+        # Common struct naming patterns to try
+        # For a dict with keys like {admin, token_type, decimals, ...},
+        # try to find TokenConfig, Config, etc.
+        struct_candidates = []
+
+        # If we have a type_hint, try it first
+        if type_hint:
+            struct_candidates.append(type_hint)
+
+        # Try to infer struct name from keys
+        # Common patterns: TokenConfig, Config, etc.
+        if 'admin' in result and 'token_type' in result:
+            struct_candidates.extend(['TokenConfig', 'Config'])
+
+        # Search for any class that:
+        # 1. Has an __init__ method
+        # 2. Has all the keys in result as parameters
+        for class_name in dir(bindings_module):
+            potential_struct = getattr(bindings_module, class_name)
+
+            # Skip non-classes and internal classes
+            if not isinstance(potential_struct, type) or class_name.startswith('_'):
+                continue
+
+            # Check if this class has all the required keys
+            if hasattr(potential_struct, '__init__'):
+                try:
+                    import inspect
+                    sig = inspect.signature(potential_struct.__init__)
+                    param_names = [p for p in sig.parameters.keys() if p != 'self']
+
+                    # If all our dict keys match the constructor parameters, this is our struct!
+                    if set(result.keys()) == set(param_names):
+                        # Instantiate the struct with converted values
+                        return potential_struct(**result)
+                except (ValueError, TypeError):
+                    continue
+
+        # If we couldn't find a matching struct, return the converted dict
+        return result
+
+    except (ImportError, AttributeError):
+        # If we can't import bindings, return the converted dict
+        return result
+
+
+def serialize_result(result: Any) -> Any:
+    """
+    Convert Stellar SDK types to JSON-serializable formats.
+    Handles:
+    - Address objects → string representation
+    - Dataclass objects (TokenInfo, etc.) → dict
+    - Custom classes with __dict__ → dict
+    - Python Enum instances → string value
+    - Lists and nested objects recursively
+    """
+    if result is None:
+        return None
+
+    # Handle lists FIRST (before checking for dataclass fields)
+    if isinstance(result, list):
+        return [serialize_result(item) for item in result]
+
+    # Handle Python Enum instances (TokenTypeKind, DataKeyKind, etc.)
+    # Must check BEFORE checking for __dict__ since Enums also have __dict__
+    from enum import Enum
+    if isinstance(result, Enum):
+        return result.value  # Return the enum's value (e.g., "Pausable")
+
+    # Handle stellar_sdk.Address - extract clean address string
+    if hasattr(result, '__class__') and result.__class__.__name__ == 'Address':
+        return result.address
+
+    # Handle dataclasses (TokenInfo, etc.)
+    if hasattr(result, '__dataclass_fields__'):
+        from dataclasses import asdict
+        return serialize_result(asdict(result))
+
+    # Handle custom classes (like TokenInfo from bindings) by converting to dict
+    if hasattr(result, '__dict__') and not isinstance(result, (str, int, float, bool, bytes)):
+        obj_dict = {}
+        for key, value in result.__dict__.items():
+            # Skip private/internal attributes
+            if not key.startswith('_'):
+                obj_dict[key] = serialize_result(value)
+        return obj_dict
+
+    # Handle dicts
+    if isinstance(result, dict):
+        return {key: serialize_result(value) for key, value in result.items()}
+
+    # Primitives (int, str, bool, float, bytes) are already JSON-serializable
+    # bytes need to be converted to hex string or base64
+    if isinstance(result, bytes):
+        return result.hex()
+
+    return result
+
+
+class ContractClient:
+    """
+    Wrapper around stellar-contract-bindings generated client
+    Provides MCP-friendly interface for contract interactions
+    """
+
+    def __init__(self, config: ContractConfig):
+        self.config = config
+        # Initialize generated client from stellar-contract-bindings
+        # The ClientAsync expects contract_id, rpc_url string, and network_passphrase
+        self.client = GeneratedClient(
+            contract_id=config.contract_id,
+            rpc_url=config.rpc_url,
+            network_passphrase=config.network_passphrase
+        )
+
+    {{#each functions}}
+    async def {{name_snake}}(
+        self,
+        {{#each inputs}}
+        {{name_snake}}: {{py_type}},
+        {{/each}}
+    ) -> Dict[str, Any]:
+        """
+        {{doc}}
+
+        {{#if inputs}}
+        Parameters:
+        {{#each inputs}}
+        - {{name_snake}} ({{py_type}}): {{#if doc}}{{doc}}{{else}}Contract parameter{{/if}}
+        {{/each}}
+        {{/if}}
+
+        Returns:
+            Dict with 'xdr' (transaction XDR) and 'simulationResult'
+        """
+        {{#if inputs}}
+        # Convert MCP parameters to Stellar SDK types
+        # This handles None, hex strings → bytes, numeric strings → int
+        params = convert_mcp_params({
+            {{#each inputs}}
+            "{{name}}": {{name_snake}},
+            {{/each}}
+        })
+        {{/if}}
+
+        # Call the generated bindings method
+        # The method returns an AssembledTransactionAsync object
+        assembled = await self.client.{{name_snake}}({{#if inputs}}**params{{/if}})
+
+        # Return transaction XDR and simulation result in MCP-compatible format
+        result = assembled.result() if hasattr(assembled, 'result') else None
+        return {
+            "xdr": assembled.to_xdr(),
+            "simulationResult": serialize_result(result)
+        }
+
+    {{/each}}
