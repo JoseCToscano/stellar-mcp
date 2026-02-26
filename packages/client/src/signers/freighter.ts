@@ -65,10 +65,18 @@ export function freighterSigner(_options?: FreighterSignerOptions): Signer {
 
       // Step 3: Sign with browser wallet
       logger.debug('Freighter signer: requesting wallet signature');
-      const { signedTxXdr } = await kit.signTransaction(walletReadyXdr, {
-        address: walletAddress,
-        networkPassphrase: context.networkPassphrase,
-      });
+      let signedTxXdr: string;
+      try {
+        const signed = await kit.signTransaction(walletReadyXdr, {
+          address: walletAddress,
+          networkPassphrase: context.networkPassphrase,
+        });
+        signedTxXdr = signed.signedTxXdr;
+      } catch (err) {
+        // StellarWalletsKit throws plain objects on rejection/error, not Error instances.
+        // Normalise so callers always get a proper Error with a readable message.
+        throw new Error(extractWalletKitMessage(err));
+      }
 
       // Step 4: Submit directly to Stellar RPC
       logger.debug('Freighter signer: submitting signed transaction to network');
@@ -88,6 +96,25 @@ export function freighterSigner(_options?: FreighterSignerOptions): Signer {
       return result;
     },
   };
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Extract a human-readable message from whatever StellarWalletsKit throws.
+ * The kit throws plain objects like { code: 4001, message: '...' } rather
+ * than Error instances, so we have to handle all shapes.
+ */
+function extractWalletKitMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null) {
+    const obj = err as Record<string, unknown>;
+    if (typeof obj.message === 'string') return obj.message;
+    if (typeof obj.error   === 'string') return obj.error;
+    if (typeof obj.code    === 'number') return `Wallet error (code ${obj.code})`;
+    try { return JSON.stringify(err); } catch { /* ignore */ }
+  }
+  return String(err);
 }
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
