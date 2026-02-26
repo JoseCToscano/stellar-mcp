@@ -15,6 +15,15 @@ export function parseSubmitResponse(data: unknown): SubmitResult {
   }
 
   const response = data as Record<string, unknown>;
+
+  // If the server returned { success: false, result: <errMsg> }, propagate the error
+  if (response.success === false) {
+    const errMsg = typeof response.result === 'string'
+      ? response.result
+      : JSON.stringify(response.result ?? response);
+    throw new MCPToolError(TOOL_SIGN_AND_SUBMIT, errMsg);
+  }
+
   const result = response.result as Record<string, unknown> | undefined;
 
   return {
