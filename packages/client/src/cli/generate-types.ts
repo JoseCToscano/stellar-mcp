@@ -85,7 +85,7 @@ const lines: string[] = [
   `// Source : ${url}`,
   `// Refresh: npx mcp-generate-types --url ${url} --out ${outFile}`,
   ``,
-  `import { MCPClient, type MCPClientOptions, type ToolMap } from '@stellar-mcp/client';`,
+  `import { MCPClient, type MCPClientOptions } from '@stellar-mcp/client';`,
   ``,
   `// ─── Input Types ─────────────────────────────────────────────────────────────`,
   ``,
@@ -122,7 +122,7 @@ for (const tool of tools) {
 
 lines.push(`// ─── Tool Map ────────────────────────────────────────────────────────────────`);
 lines.push(``);
-lines.push(`interface ServerTools extends ToolMap {`);
+lines.push(`interface ServerTools {`);
 for (const tool of tools) {
   lines.push(`  /** ${tool.description?.split('\n')[0] ?? tool.name} */`);
   lines.push(`  '${tool.name}': { args: ${argTypeNames[tool.name]}; result: unknown };`);
