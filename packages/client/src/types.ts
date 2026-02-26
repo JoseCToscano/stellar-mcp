@@ -53,10 +53,7 @@ export interface ToolInfo {
  * Describes a single MCP tool — what goes in (`args`) and what comes out (`result`).
  * Use this as the value type when building a `ToolMap`.
  */
-export interface ToolDef<
-  TArgs extends Record<string, unknown> = Record<string, unknown>,
-  TResult = unknown,
-> {
+export interface ToolDef<TArgs = unknown, TResult = unknown> {
   args: TArgs;
   result: TResult;
 }
