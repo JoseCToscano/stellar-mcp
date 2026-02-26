@@ -141,6 +141,8 @@ npx mcp-generate-types --help
 
 import { MCPClient, type MCPClientOptions, type ToolMap } from '@stellar-mcp/client';
 
+// ─── Arg Types ────────────────────────────────────────────────────────────────
+
 export interface DeployTokenArgs {
   deployer: string;
   config: {
@@ -155,9 +157,23 @@ export interface DeployTokenArgs {
 
 export type GetAdminArgs = Record<string, never>;
 
+// ─── Result Types ─────────────────────────────────────────────────────────────
+
+export interface GetAdminResult {
+  xdr: string;
+  simulationResult?: string; // the admin address
+}
+
+export interface DeployTokenResult {
+  xdr: string;             // unsigned transaction XDR — pass to signAndSubmit()
+  simulationResult?: unknown;
+}
+
+// ─── Tool Map ─────────────────────────────────────────────────────────────────
+
 interface ServerTools extends ToolMap {
-  'get-admin': { args: GetAdminArgs; result: unknown };
-  'deploy-token': { args: DeployTokenArgs; result: unknown };
+  'get-admin': { args: GetAdminArgs; result: GetAdminResult };
+  'deploy-token': { args: DeployTokenArgs; result: DeployTokenResult };
   // ...
 }
 
@@ -166,7 +182,7 @@ export function createMCPClient(options: MCPClientOptions): MCPClient<ServerTool
 }
 ```
 
-> **Note:** MCP `listTools()` only provides input schemas, not output schemas, so `result: unknown` is always honest — you'll need to cast or validate the data field at runtime for write operations.
+Result types are compiled from each tool's `outputSchema` — read-only tools get precise types (e.g. `simulationResult?: string`), write tools include the unsigned `xdr` field.
 
 **Regenerate when the server changes:**
 
@@ -208,7 +224,8 @@ Returns `ToolInfo[]`:
 interface ToolInfo {
   name: string;
   description: string;
-  inputSchema: Record<string, unknown>; // JSON Schema
+  inputSchema: Record<string, unknown>;   // JSON Schema for tool arguments
+  outputSchema?: Record<string, unknown>; // JSON Schema for the result (when server provides it)
 }
 ```
 
@@ -426,18 +443,20 @@ logger.setLevel('debug'); // 'debug' | 'info' | 'warn' | 'error' | 'silent'
 Integration tests run against a real MCP server and are gated on an environment variable to keep CI safe:
 
 ```bash
-# Start the reference server first
-cd docs/final-hey
-USE_HTTP=true PORT=3001 node dist/index.js
+# Start your MCP server on port 3001 first.
+# From a generated server project:
+#   USE_HTTP=true PORT=3001 node dist/index.js
+# Or point MCP_URL at any already-running instance.
 
 # Build the SDK first (CLI tests require dist/cli/generate-types.js)
 npm run build
 
 # Read-only tests + CLI generate-types tests (no secret key required)
-RUN_INTEGRATION=1 npm run test:integration
+MCP_URL=http://localhost:3001/mcp RUN_INTEGRATION=1 npm run test:integration
 
 # Full suite including deploy + submit
-RUN_INTEGRATION=1 \
+MCP_URL=http://localhost:3001/mcp \
+  RUN_INTEGRATION=1 \
   TEST_ADMIN_ADDRESS=G... \
   TEST_SECRET_KEY=S... \
   npm run test:integration
