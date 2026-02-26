@@ -521,20 +521,13 @@ impl<'a> McpGenerator<'a> {
         content.push_str("      }\n");
         content.push_str("    });\n\n");
 
-        // GET endpoint - return empty SSE stream for stateless mode compatibility
-        content.push_str("    // GET endpoint - return empty SSE stream for stateless mode compatibility\n");
-        content.push_str("    // This is needed because AI SDK's HTTP transport always tries to open SSE after tool calls\n");
-        content.push_str("    app.get('/mcp', async (_req, res) => {\n");
-        content.push_str("      console.error(`[MCP] GET request - returning empty SSE stream`);\n");
-        content.push_str("      res.setHeader('Content-Type', 'text/event-stream');\n");
-        content.push_str("      res.setHeader('Cache-Control', 'no-cache');\n");
-        content.push_str("      res.setHeader('Connection', 'keep-alive');\n");
-        content.push_str("      // Send a heartbeat comment then immediately end\n");
-        content.push_str("      res.write(': heartbeat\\n\\n');\n");
-        content.push_str("      // Keep connection open briefly to satisfy client\n");
-        content.push_str("      setTimeout(() => {\n");
-        content.push_str("        res.end();\n");
-        content.push_str("      }, 100);\n");
+        // GET endpoint - return 405 to signal stateless mode (no persistent SSE stream)
+        content.push_str("    // GET endpoint - return 405 (stateless mode has no persistent SSE stream)\n");
+        content.push_str("    // StreamableHTTPClientTransport handles 405 gracefully: skips GET stream,\n");
+        content.push_str("    // operates in pure stateless POST mode.  A closing SSE stream confuses\n");
+        content.push_str("    // clients into reconnection loops and causes 'SSE error: undefined'.\n");
+        content.push_str("    app.get('/mcp', (_req, res) => {\n");
+        content.push_str("      res.status(405).json({ error: 'Method Not Allowed: server runs in stateless HTTP mode' });\n");
         content.push_str("    });\n\n");
 
         // DELETE endpoint
