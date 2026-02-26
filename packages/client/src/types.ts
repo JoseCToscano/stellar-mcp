@@ -45,6 +45,10 @@ export interface ToolInfo {
 
   /** JSON Schema describing the tool's input parameters */
   inputSchema: Record<string, unknown>;
+
+  /** JSON Schema describing the tool's structured output — present when the server
+   *  registers the tool with an `outputSchema` (MCP SDK ≥ 1.24.3). */
+  outputSchema?: Record<string, unknown>;
 }
 
 // ─── Typed Tool Map ───────────────────────────────────────────────────────────

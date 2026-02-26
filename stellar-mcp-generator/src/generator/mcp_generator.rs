@@ -7,6 +7,40 @@ use crate::NetworkConfig;
 use std::fs;
 use std::path::Path;
 
+/// Convert a TypeRef to a Zod schema string for use in outputSchema.
+/// Unlike `TypeRef::to_zod()`, Custom types are prefixed with the `schemas.`
+/// namespace used in generated `index.ts` (e.g. `schemas.TokenConfigSchema`).
+pub fn output_zod_for_type(type_ref: &TypeRef) -> String {
+    match type_ref {
+        TypeRef::Custom(name) => format!("schemas.{}Schema", name),
+        TypeRef::Option(inner) => format!("{}.nullable()", output_zod_for_type(inner)),
+        TypeRef::Vec(inner) => format!("z.array({})", output_zod_for_type(inner)),
+        TypeRef::Map { key, value } => {
+            format!("z.map({}, {})", output_zod_for_type(key), output_zod_for_type(value))
+        }
+        TypeRef::Tuple(types) => {
+            let zods: Vec<String> = types.iter().map(|t| output_zod_for_type(t)).collect();
+            format!("z.tuple([{}])", zods.join(", "))
+        }
+        TypeRef::Result { ok, .. } => output_zod_for_type(ok),
+        // All primitive types are fine as-is from to_zod()
+        _ => type_ref.to_zod(),
+    }
+}
+
+/// Build the Zod raw shape string for the `outputSchema` of a generated tool.
+/// Returns a JS object literal (not wrapped in `z.object()`) to satisfy
+/// `ZodRawShapeCompat` required by `server.registerTool()`.
+pub fn output_schema_raw_shape(output: &Option<TypeRef>) -> String {
+    match output {
+        None | Some(TypeRef::Void) => "{ xdr: z.string() }".to_string(),
+        Some(t) => format!(
+            "{{ xdr: z.string(), simulationResult: {}.optional() }}",
+            output_zod_for_type(t)
+        ),
+    }
+}
+
 /// MCP Server generator
 pub struct McpGenerator<'a> {
     output_dir: &'a Path,
@@ -136,6 +170,7 @@ impl<'a> McpGenerator<'a> {
                     .map(|t| t.to_typescript())
                     .unwrap_or_else(|| "void".to_string()),
                 has_output: f.output.is_some(),
+                output_zod: output_schema_raw_shape(&f.output),
             })
             .collect();
 
@@ -202,18 +237,21 @@ impl<'a> McpGenerator<'a> {
         // Generate tool registrations
         for func in functions {
             content.push_str(&format!("// Tool: {}\n", func.name));
-            content.push_str("server.tool(\n");
+            content.push_str("server.registerTool(\n");
             content.push_str(&format!("  '{}',\n", func.name_kebab));
             // Escape newlines and single quotes for JavaScript string
             let escaped_doc = func.doc
                 .replace('\\', "\\\\")
                 .replace('\'', "\\'")
                 .replace('\n', "\\n");
-            content.push_str(&format!("  '{}',\n", escaped_doc));
 
-            // Schema
+            // Config object
+            content.push_str("  {\n");
+            content.push_str(&format!("    description: '{}',\n", escaped_doc));
+
+            // inputSchema
             if func.has_inputs {
-                content.push_str("  {\n");
+                content.push_str("    inputSchema: {\n");
                 for input in &func.inputs {
                     // If zod_type references a custom schema (ends with Schema and starts with uppercase),
                     // prefix with schemas. namespace
@@ -225,16 +263,20 @@ impl<'a> McpGenerator<'a> {
                     };
                     // Use snake_case field names to match official Stellar bindings
                     content.push_str(&format!(
-                        "    {}: {}.describe('{}'),\n",
-                        input.name, // Use original snake_case name
+                        "      {}: {}.describe('{}'),\n",
+                        input.name,
                         zod_ref,
                         input.doc.replace('\'', "\\'")
                     ));
                 }
-                content.push_str("  },\n");
+                content.push_str("    },\n");
             } else {
-                content.push_str("  {},\n");
+                content.push_str("    inputSchema: {},\n");
             }
+
+            // outputSchema (raw shape, not wrapped in z.object())
+            content.push_str(&format!("    outputSchema: {},\n", func.output_zod));
+            content.push_str("  },\n");
 
             // Handler
             content.push_str("  async (params) => {\n");
@@ -253,6 +295,7 @@ impl<'a> McpGenerator<'a> {
             content.push_str("          type: 'text',\n");
             content.push_str("          text: jsonStringify(result, 2),\n");
             content.push_str("        }],\n");
+            content.push_str("        structuredContent: result,\n");
             content.push_str("      };\n");
             content.push_str("    } catch (error) {\n");
             content.push_str("      return {\n");
@@ -271,13 +314,16 @@ impl<'a> McpGenerator<'a> {
 
         // Sign and submit tool
         content.push_str("// Tool: sign-and-submit\n");
-        content.push_str("server.tool(\n");
+        content.push_str("server.registerTool(\n");
         content.push_str("  'sign-and-submit',\n");
-        content.push_str("  'Sign a transaction XDR and submit to the network. Use walletContractId for passkey smart wallet signing (requires WALLET_SIGNER_SECRET env var), or secretKey for regular keypair signing. secretKey is always required as fee payer.',\n");
         content.push_str("  {\n");
-        content.push_str("    xdr: z.string().describe('Transaction XDR to sign and submit'),\n");
-        content.push_str("    secretKey: z.string().optional().describe('Secret key for signing. For passkey flow, this becomes the fee payer secret.'),\n");
-        content.push_str("    walletContractId: z.string().optional().describe('Smart wallet contract ID for passkey signing (uses WALLET_SIGNER_SECRET from env, secretKey as fee payer)'),\n");
+        content.push_str("    description: 'Sign a transaction XDR and submit to the network. Use walletContractId for passkey smart wallet signing (requires WALLET_SIGNER_SECRET env var), or secretKey for regular keypair signing. secretKey is always required as fee payer.',\n");
+        content.push_str("    inputSchema: {\n");
+        content.push_str("      xdr: z.string().describe('Transaction XDR to sign and submit'),\n");
+        content.push_str("      secretKey: z.string().optional().describe('Secret key for signing. For passkey flow, this becomes the fee payer secret.'),\n");
+        content.push_str("      walletContractId: z.string().optional().describe('Smart wallet contract ID for passkey signing (uses WALLET_SIGNER_SECRET from env, secretKey as fee payer)'),\n");
+        content.push_str("    },\n");
+        content.push_str("    outputSchema: { success: z.boolean(), result: z.unknown().optional() },\n");
         content.push_str("  },\n");
         content.push_str("  async ({ xdr, secretKey, walletContractId }) => {\n");
         content.push_str("    try {\n");
@@ -292,11 +338,13 @@ impl<'a> McpGenerator<'a> {
         content.push_str("      if (walletContractId) {\n");
         content.push_str("        // Passkey signing uses WALLET_SIGNER_SECRET from env for auth, secretKey as fee payer\n");
         content.push_str("        const result = await signAndSendWithPasskey(xdr, walletContractId, secretKey);\n");
+        content.push_str("        const payload = { success: true, result };\n");
         content.push_str("        return {\n");
         content.push_str("          content: [{\n");
         content.push_str("            type: 'text',\n");
-        content.push_str("            text: jsonStringify({ success: true, result }),\n");
+        content.push_str("            text: jsonStringify(payload),\n");
         content.push_str("          }],\n");
+        content.push_str("          structuredContent: payload,\n");
         content.push_str("        };\n");
         content.push_str("      }\n\n");
 
@@ -304,11 +352,13 @@ impl<'a> McpGenerator<'a> {
         content.push_str("      // Regular signing: signAuthEntries + sign envelope + submit\n");
         content.push_str("      const signedXdr = await signTransaction(xdr, secretKey);\n");
         content.push_str("      const result = await submitTransaction(signedXdr);\n");
+        content.push_str("      const payload = { success: true, result };\n");
         content.push_str("      return {\n");
         content.push_str("        content: [{\n");
         content.push_str("          type: 'text',\n");
-        content.push_str("          text: jsonStringify({ success: true, result }),\n");
+        content.push_str("          text: jsonStringify(payload),\n");
         content.push_str("        }],\n");
+        content.push_str("        structuredContent: payload,\n");
         content.push_str("      };\n");
         content.push_str("    } catch (error) {\n");
         content.push_str("      return {\n");
@@ -326,32 +376,37 @@ impl<'a> McpGenerator<'a> {
 
         // Prepare transaction tool (for wallet mode) - always included for external wallet support
         content.push_str("// Tool: prepare-transaction\n");
-        content.push_str("server.tool(\n");
+        content.push_str("server.registerTool(\n");
         content.push_str("  'prepare-transaction',\n");
-        content.push_str("  'Prepare transaction for wallet signing. Takes XDR with dummy sequence and returns wallet-ready XDR with fresh sequence. Use this when user wants to sign a transaction with their wallet.',\n");
         content.push_str("  {\n");
-        content.push_str("    xdr: z.string().describe('Transaction XDR from contract function call'),\n");
-        content.push_str("    walletAddress: z.string().describe('Wallet public key (G...) to prepare transaction for'),\n");
-        content.push_str("    toolName: z.string().describe('Name of contract function being called'),\n");
-        content.push_str("    params: z.record(z.any()).optional().describe('Parameters passed to function'),\n");
-        content.push_str("    simulationResult: z.any().optional().describe('Simulation result from initial call'),\n");
+        content.push_str("    description: 'Prepare transaction for wallet signing. Takes XDR with dummy sequence and returns wallet-ready XDR with fresh sequence. Use this when user wants to sign a transaction with their wallet.',\n");
+        content.push_str("    inputSchema: {\n");
+        content.push_str("      xdr: z.string().describe('Transaction XDR from contract function call'),\n");
+        content.push_str("      walletAddress: z.string().describe('Wallet public key (G...) to prepare transaction for'),\n");
+        content.push_str("      toolName: z.string().describe('Name of contract function being called'),\n");
+        content.push_str("      params: z.record(z.any()).optional().describe('Parameters passed to function'),\n");
+        content.push_str("      simulationResult: z.any().optional().describe('Simulation result from initial call'),\n");
+        content.push_str("    },\n");
+        content.push_str("    outputSchema: { walletReadyXdr: z.string(), preview: z.record(z.string(), z.unknown()) },\n");
         content.push_str("  },\n");
         content.push_str("  async ({ xdr, walletAddress, toolName, params, simulationResult }) => {\n");
         content.push_str("    try {\n");
-        content.push_str("      const result = await prepareTransactionForWallet(xdr, walletAddress);\n\n");
+        content.push_str("      const result = await prepareTransactionForWallet(xdr, walletAddress);\n");
+        content.push_str("      const payload = {\n");
+        content.push_str("        walletReadyXdr: result.walletReadyXdr,\n");
+        content.push_str("        preview: {\n");
+        content.push_str("          toolName,\n");
+        content.push_str("          params,\n");
+        content.push_str("          simulationResult,\n");
+        content.push_str("          network: NETWORK_PASSPHRASE,\n");
+        content.push_str("        },\n");
+        content.push_str("      };\n");
         content.push_str("      return {\n");
         content.push_str("        content: [{\n");
         content.push_str("          type: 'text',\n");
-        content.push_str("          text: jsonStringify({\n");
-        content.push_str("            walletReadyXdr: result.walletReadyXdr,\n");
-        content.push_str("            preview: {\n");
-        content.push_str("              toolName,\n");
-        content.push_str("              params,\n");
-        content.push_str("              simulationResult,\n");
-        content.push_str("              network: NETWORK_PASSPHRASE,\n");
-        content.push_str("            },\n");
-        content.push_str("          }),\n");
+        content.push_str("          text: jsonStringify(payload),\n");
         content.push_str("        }],\n");
+        content.push_str("        structuredContent: payload,\n");
         content.push_str("      };\n");
         content.push_str("    } catch (error) {\n");
         content.push_str("      return {\n");
@@ -372,33 +427,38 @@ impl<'a> McpGenerator<'a> {
         content.push_str("// This tool is used in SECRET KEY mode to prepare a transaction for signing.\n");
         content.push_str("// It returns the XDR and metadata so the frontend can show the SecretKeySignCard.\n");
         content.push_str("// The actual signing happens when the user calls sign-and-submit with their secret key.\n");
-        content.push_str("server.tool(\n");
+        content.push_str("server.registerTool(\n");
         content.push_str("  'prepare-sign-and-submit',\n");
-        content.push_str("  'Prepare a write transaction for secret key signing. Call this when the user wants to execute a write operation (deploy, transfer, etc.) in SECRET KEY mode. Returns the XDR for the frontend to show the signing UI. After user provides their secret key, call sign-and-submit to complete the transaction.',\n");
         content.push_str("  {\n");
-        content.push_str("    xdr: z.string().describe('Transaction XDR from contract function call'),\n");
-        content.push_str("    toolName: z.string().describe('Name of contract function being called (e.g., deploy-token, pause)'),\n");
-        content.push_str("    params: z.record(z.any()).optional().describe('Parameters passed to the contract function'),\n");
-        content.push_str("    simulationResult: z.any().optional().describe('Simulation result from the contract call'),\n");
+        content.push_str("    description: 'Prepare a write transaction for secret key signing. Call this when the user wants to execute a write operation (deploy, transfer, etc.) in SECRET KEY mode. Returns the XDR for the frontend to show the signing UI. After user provides their secret key, call sign-and-submit to complete the transaction.',\n");
+        content.push_str("    inputSchema: {\n");
+        content.push_str("      xdr: z.string().describe('Transaction XDR from contract function call'),\n");
+        content.push_str("      toolName: z.string().describe('Name of contract function being called (e.g., deploy-token, pause)'),\n");
+        content.push_str("      params: z.record(z.any()).optional().describe('Parameters passed to the contract function'),\n");
+        content.push_str("      simulationResult: z.any().optional().describe('Simulation result from the contract call'),\n");
+        content.push_str("    },\n");
+        content.push_str("    outputSchema: { readyForSigning: z.literal(true), xdr: z.string(), preview: z.record(z.string(), z.unknown()) },\n");
         content.push_str("  },\n");
         content.push_str("  async ({ xdr, toolName, params, simulationResult }) => {\n");
         content.push_str("    try {\n");
         content.push_str("      // Simply return the XDR and metadata for the frontend to display\n");
         content.push_str("      // No actual signing happens here - that's done by sign-and-submit\n");
+        content.push_str("      const payload = {\n");
+        content.push_str("        readyForSigning: true as const,\n");
+        content.push_str("        xdr,\n");
+        content.push_str("        preview: {\n");
+        content.push_str("          toolName,\n");
+        content.push_str("          params,\n");
+        content.push_str("          simulationResult,\n");
+        content.push_str("          network: NETWORK_PASSPHRASE,\n");
+        content.push_str("        },\n");
+        content.push_str("      };\n");
         content.push_str("      return {\n");
         content.push_str("        content: [{\n");
         content.push_str("          type: 'text',\n");
-        content.push_str("          text: jsonStringify({\n");
-        content.push_str("            readyForSigning: true,\n");
-        content.push_str("            xdr,\n");
-        content.push_str("            preview: {\n");
-        content.push_str("              toolName,\n");
-        content.push_str("              params,\n");
-        content.push_str("              simulationResult,\n");
-        content.push_str("              network: NETWORK_PASSPHRASE,\n");
-        content.push_str("            },\n");
-        content.push_str("          }),\n");
+        content.push_str("          text: jsonStringify(payload),\n");
         content.push_str("        }],\n");
+        content.push_str("        structuredContent: payload,\n");
         content.push_str("      };\n");
         content.push_str("    } catch (error) {\n");
         content.push_str("      return {\n");
@@ -1238,7 +1298,7 @@ export async function signAndSendWithPasskey(
 
     fn generate_package_json(&self, _args: &GenerateArgs) -> Result<(), Box<dyn std::error::Error>> {
         let deps = serde_json::json!({
-            "@modelcontextprotocol/sdk": "^1.8.0",
+            "@modelcontextprotocol/sdk": "^1.24.3",
             "@stellar/stellar-sdk": "^14.0.0",
             "zod": "^3.23.0",
             "dotenv": "^16.4.0",

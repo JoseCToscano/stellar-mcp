@@ -8,6 +8,7 @@ import {
   type SubmitResult,
   type ToolInfo,
   type ToolMap,
+  type ToolDef,
   type SignerContext,
   type SignAndSubmitOptions,
 } from './types.js';
@@ -50,7 +51,7 @@ const CLIENT_VERSION = '0.1.0';
  * const client = new MCPClient<MyTools>({ url, networkPassphrase, rpcUrl });
  * ```
  */
-export class MCPClient<TTools extends ToolMap = ToolMap> {
+export class MCPClient<TTools extends { [K in keyof TTools]: ToolDef } = ToolMap> {
   private readonly options: Required<
     Pick<MCPClientOptions, 'url' | 'networkPassphrase' | 'rpcUrl'>
   > &
@@ -83,6 +84,8 @@ export class MCPClient<TTools extends ToolMap = ToolMap> {
       name: tool.name,
       description: tool.description ?? '',
       inputSchema: tool.inputSchema as Record<string, unknown>,
+      outputSchema: (tool as Record<string, unknown>).outputSchema as
+        Record<string, unknown> | undefined,
     }));
   }
 
@@ -116,12 +119,18 @@ export class MCPClient<TTools extends ToolMap = ToolMap> {
       throw new MCPToolError(toolName, errorText);
     }
 
-    // Extract and parse the text content
+    // Prefer structuredContent (MCP SDK ≥ 1.24.3 with outputSchema) over text parsing.
+    // Servers without outputSchema never set structuredContent, so this is backward-compatible.
+    const hasStructured =
+      'structuredContent' in response && response.structuredContent != null;
+
+    // Extract and parse the text content as fallback (or primary for error detection)
     const rawText = extractTextContent('content' in response ? response.content : []);
-    const data = parseJsonSafe(rawText);
+    const textData = hasStructured ? response.structuredContent : parseJsonSafe(rawText);
+    const data = textData;
 
     // Check for application-level error in parsed data
-    if (isErrorResponse(data)) {
+    if (!hasStructured && isErrorResponse(data)) {
       throw new MCPToolError(
         toolName,
         ((data as Record<string, unknown>).message as string) ?? rawText,
@@ -245,7 +254,7 @@ export class MCPClient<TTools extends ToolMap = ToolMap> {
       rpcUrl: this.options.rpcUrl,
       networkPassphrase: this.options.networkPassphrase,
       mcpCall: async (tool: string, args: Record<string, unknown>) => {
-        const result = await this.call(tool, args);
+        const result = await this.call(tool as keyof TTools & string, args);
         return result.data;
       },
     };

@@ -58,10 +58,27 @@ describe.skipIf(!RUN_INTEGRATION)('generate-types CLI', () => {
 
   it('output file contains a ServerTools ToolMap with all tools', () => {
     const content = readFileSync(OUT_FILE, 'utf-8');
-    expect(content).toContain("interface ServerTools extends ToolMap");
+    // ServerTools is a plain interface (no extends ToolMap — avoids index signature widening)
+    expect(content).toContain("interface ServerTools {");
     expect(content).toContain("'get-admin'");
     expect(content).toContain("'deploy-token'");
     expect(content).toContain("'sign-and-submit'");
+  });
+
+  it('output file contains typed result interfaces (not result: unknown)', () => {
+    const content = readFileSync(OUT_FILE, 'utf-8');
+    // Tools with outputSchema should have named result types
+    expect(content).toContain('export interface GetAdminResult');
+    expect(content).toContain('export interface GetDeployedTokensResult');
+    // The ToolMap should reference those types
+    expect(content).toContain("result: GetAdminResult");
+    expect(content).toContain("result: GetDeployedTokensResult");
+  });
+
+  it('listTools includes outputSchema for contract tools', () => {
+    const content = readFileSync(OUT_FILE, 'utf-8');
+    // Result types have xdr + simulationResult fields (from outputSchema)
+    expect(content).toContain('simulationResult?:');
   });
 
   it('output file has DO NOT EDIT header', () => {

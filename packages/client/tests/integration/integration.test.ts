@@ -75,25 +75,35 @@ describe.skipIf(!RUN_INTEGRATION)('MCPClient integration', () => {
     expect(names).toContain('deploy-token');
   });
 
+  it('listTools returns outputSchema for contract tools', async () => {
+    const tools = await client.listTools();
+    const getAdmin = tools.find((t) => t.name === 'get-admin');
+    expect(getAdmin).toBeDefined();
+    // Server emits outputSchema via registerTool — client should pass it through
+    expect(getAdmin?.outputSchema).toBeDefined();
+    expect(typeof getAdmin?.outputSchema).toBe('object');
+  });
+
   it('get-admin returns a G… Stellar address', async () => {
-    const { data } = await client.call('get-admin');
-    expect(typeof data).toBe('string');
-    expect((data as string).startsWith('G')).toBe(true);
-    expect((data as string).length).toBe(56);
+    // With structuredContent, data is the full envelope { xdr, simulationResult }
+    const result = await client.call('get-admin');
+    const admin = result.simulationResult as string;
+    expect(typeof admin).toBe('string');
+    expect(admin.startsWith('G')).toBe(true);
+    expect(admin.length).toBe(56);
   });
 
   it('get-token-count returns a non-negative number', async () => {
-    const { data } = await client.call('get-token-count');
-    // Server serialises u32 as a number
-    expect(typeof data === 'number' || typeof data === 'string').toBe(true);
-    const count = Number(data);
+    const result = await client.call('get-token-count');
+    // simulationResult holds the contract return value (u32 serialised as number)
+    const count = Number(result.simulationResult);
     expect(Number.isFinite(count)).toBe(true);
     expect(count).toBeGreaterThanOrEqual(0);
   });
 
   it('get-deployed-tokens returns an array', async () => {
-    const { data } = await client.call('get-deployed-tokens');
-    expect(Array.isArray(data)).toBe(true);
+    const result = await client.call('get-deployed-tokens');
+    expect(Array.isArray(result.simulationResult)).toBe(true);
   });
 
   // ─── Write tests (requires TEST_ADMIN_ADDRESS + TEST_SECRET_KEY) ────────────

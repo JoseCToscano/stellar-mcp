@@ -118,6 +118,36 @@ for (const tool of tools) {
   }
 }
 
+// ─── Result Types ─────────────────────────────────────────────────────────────
+
+lines.push(`// ─── Result Types ────────────────────────────────────────────────────────────`);
+lines.push(``);
+
+// Map of tool name → generated result type name (or 'unknown' when no outputSchema)
+const resultTypeNames: Record<string, string> = {};
+
+for (const tool of tools) {
+  const typeName = `${toPascalCase(tool.name)}Result`;
+  const outputSchema = tool.outputSchema as Record<string, unknown> | undefined;
+
+  const hasOutputSchema =
+    outputSchema != null &&
+    outputSchema.properties != null &&
+    Object.keys(outputSchema.properties as object).length > 0;
+
+  if (hasOutputSchema) {
+    resultTypeNames[tool.name] = typeName;
+    const compiled = await compile(outputSchema as Parameters<typeof compile>[0], typeName, {
+      bannerComment: '',
+      additionalProperties: false,
+      unknownAny: false,
+    });
+    lines.push(compiled);
+  } else {
+    resultTypeNames[tool.name] = 'unknown';
+  }
+}
+
 // ─── ServerTools map ──────────────────────────────────────────────────────────
 
 lines.push(`// ─── Tool Map ────────────────────────────────────────────────────────────────`);
@@ -125,7 +155,7 @@ lines.push(``);
 lines.push(`interface ServerTools {`);
 for (const tool of tools) {
   lines.push(`  /** ${tool.description?.split('\n')[0] ?? tool.name} */`);
-  lines.push(`  '${tool.name}': { args: ${argTypeNames[tool.name]}; result: unknown };`);
+  lines.push(`  '${tool.name}': { args: ${argTypeNames[tool.name]}; result: ${resultTypeNames[tool.name]} };`);
 }
 lines.push(`}`);
 lines.push(``);

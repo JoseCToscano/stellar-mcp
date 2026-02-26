@@ -90,6 +90,32 @@ describe('MCPClient', () => {
       });
     });
 
+    it('passes through outputSchema when server provides it', async () => {
+      const outputSchema = {
+        type: 'object',
+        properties: {
+          xdr: { type: 'string' },
+          simulationResult: { type: 'string' },
+        },
+        required: ['xdr'],
+      };
+      mockListTools.mockResolvedValue({
+        tools: [
+          {
+            name: 'get-admin',
+            description: 'Get the admin address',
+            inputSchema: { type: 'object' },
+            outputSchema,
+          },
+        ],
+      });
+
+      const client = new MCPClient(VALID_OPTIONS);
+      const tools = await client.listTools();
+
+      expect(tools[0].outputSchema).toEqual(outputSchema);
+    });
+
     it('connects lazily on first call', async () => {
       mockListTools.mockResolvedValue({ tools: [] });
 
@@ -174,6 +200,35 @@ describe('MCPClient', () => {
 
       const client = new MCPClient(VALID_OPTIONS);
       await expect(client.call('failing-tool', {})).rejects.toThrow(MCPToolError);
+    });
+
+    it('uses structuredContent when present instead of content[0].text', async () => {
+      const structuredContent = { xdr: 'BBBB...', simulationResult: 'GADMIN123' };
+      mockCallTool.mockResolvedValue({
+        content: [{ type: 'text', text: '{"stale":"text"}' }],
+        structuredContent,
+      });
+
+      const client = new MCPClient(VALID_OPTIONS);
+      const result = await client.call('get-admin');
+
+      // structuredContent takes precedence over content[0].text
+      expect(result.data).toEqual(structuredContent);
+      expect(result.xdr).toBe('BBBB...');
+      expect(result.simulationResult).toBe('GADMIN123');
+    });
+
+    it('falls back to content[0].text when no structuredContent', async () => {
+      mockCallTool.mockResolvedValue({
+        content: [{ type: 'text', text: JSON.stringify({ xdr: 'CCCC...', simulationResult: 'GADMIN456' }) }],
+        // no structuredContent field
+      });
+
+      const client = new MCPClient(VALID_OPTIONS);
+      const result = await client.call('get-admin');
+
+      expect(result.data).toEqual({ xdr: 'CCCC...', simulationResult: 'GADMIN456' });
+      expect(result.xdr).toBe('CCCC...');
     });
 
     it('passes arguments to callTool', async () => {

@@ -26,6 +26,8 @@ pub struct FunctionTemplateData {
     pub has_inputs: bool,
     pub output_type: String,
     pub has_output: bool,
+    /// Zod raw shape string for the registerTool outputSchema (e.g. `{ xdr: z.string() }`)
+    pub output_zod: String,
 }
 
 /// Input parameter data for templates
