@@ -47,12 +47,41 @@ export interface ToolInfo {
   inputSchema: Record<string, unknown>;
 }
 
+// ─── Typed Tool Map ───────────────────────────────────────────────────────────
+
+/**
+ * Describes a single MCP tool — what goes in (`args`) and what comes out (`result`).
+ * Use this as the value type when building a `ToolMap`.
+ */
+export interface ToolDef<
+  TArgs extends Record<string, unknown> = Record<string, unknown>,
+  TResult = unknown,
+> {
+  args: TArgs;
+  result: TResult;
+}
+
+/**
+ * Map of tool names → their `ToolDef`.
+ * Pass this as the generic to `MCPClient` to get typed `call()` calls.
+ *
+ * Usually you generate this file once with:
+ * ```bash
+ * npx mcp-generate-types --url http://localhost:3001/mcp --out ./mcp-types.ts
+ * ```
+ * Then import `createMCPClient` from the generated file — no generics needed in your code.
+ */
+export type ToolMap = Record<string, ToolDef>;
+
 // ─── Call Results ─────────────────────────────────────────────────────────────
 
-/** Result from calling an MCP tool via client.call() */
-export interface CallResult {
+/**
+ * Result from calling an MCP tool via client.call().
+ * `TData` is inferred from your `ToolMap` when you use a typed client.
+ */
+export interface CallResult<TData = unknown> {
   /** Full parsed JSON from the MCP response */
-  data: unknown;
+  data: TData;
 
   /** Transaction XDR — present for write operations, absent for read-only tools */
   xdr?: string;

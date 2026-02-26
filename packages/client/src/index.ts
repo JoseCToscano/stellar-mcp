@@ -4,6 +4,8 @@ export { MCPClient } from './client.js';
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type {
   MCPClientOptions,
+  ToolDef,
+  ToolMap,
   CallResult,
   SubmitResult,
   ToolInfo,

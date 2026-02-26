@@ -32,6 +32,9 @@
     "dist",
     "README.md"
   ],
+  "bin": {
+    "mcp-generate-types": "./dist/cli/generate-types.js"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -40,7 +43,7 @@
     "lint": "eslint src/ tests/",
     "lint:fix": "eslint src/ tests/ --fix",
     "test": "vitest run",
-    "test:integration": "vitest run tests/integration",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
@@ -62,6 +65,9 @@
     "passkey-kit": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "json-schema-to-typescript": "^15.0.0"
   },
   "devDependencies": {
     "@creit.tech/stellar-wallets-kit": "^1.9.5",
