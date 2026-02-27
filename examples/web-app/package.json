@@ -1,0 +1,23 @@
+{
+  "name": "@stellar-mcp/testing-web",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "generate": "node node_modules/@stellar-mcp/client/dist/cli/generate-types.js --url ${MCP_URL:-http://localhost:3001/mcp} --out src/mcp-types.ts"
+  },
+  "dependencies": {
+    "@creit.tech/stellar-wallets-kit": "^1.9.5",
+    "@modelcontextprotocol/sdk": "^1.24.3",
+    "@stellar-mcp/client": "^0.1.0",
+    "@stellar/stellar-sdk": "^14.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vite": "^7.0.0"
+  },
+  "packageManager": "npm"
+}
