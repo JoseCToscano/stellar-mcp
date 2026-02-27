@@ -322,16 +322,49 @@ const result = await client.signAndSubmit(xdr!, {
 
 ---
 
-### `freighterSigner(options?)` — Browser only
+### `connectFreighter(networkPassphrase)` — Browser only (recommended)
 
-Uses the [Freighter](https://www.freighter.app/) browser extension via `@creit.tech/stellar-wallets-kit`. Requires `@creit.tech/stellar-wallets-kit` as a peer dependency.
+The recommended way to use Freighter in browser dApps. Connects to the wallet **once** and returns both the wallet address (for your UI) and a pre-connected signer (for transactions). The signer closes over the live wallet connection — it will **not** re-prompt for the address on each `signAndSubmit()` call.
+
+Requires `@creit.tech/stellar-wallets-kit` as a peer dependency.
+
+```ts
+import { connectFreighter } from '@stellar-mcp/client';
+import { Networks } from '@stellar/stellar-sdk';
+
+// Connect once at startup or on button click
+const { address, signer } = await connectFreighter(Networks.TESTNET);
+
+// Show address in your UI
+headerEl.textContent = address;
+
+// Later, when user submits a transaction:
+const result = await client.signAndSubmit(xdr!, { signer });
+// Freighter prompts only for signing — no re-connect popup
+```
+
+Returns `FreighterConnection`:
+
+```ts
+interface FreighterConnection {
+  address: string;  // wallet public key (G...)
+  signer:  Signer;  // pre-connected, pass to signAndSubmit()
+}
+```
 
 **Flow:**
-1. Get wallet address from Freighter
-2. Call MCP `prepare-transaction` to rebuild XDR with wallet as source and fresh sequence number
-3. Sign the wallet-ready XDR in the browser extension
-4. Submit the signed transaction directly to Stellar RPC (bypasses MCP to avoid double-signing)
-5. Poll for confirmation
+1. Creates `StellarWalletsKit` once
+2. Fetches wallet address once — stored in closure
+3. Returns `{ address, signer }` immediately
+4. On each `signAndSubmit`: calls `prepare-transaction` → Freighter sign popup → RPC submit → poll
+
+---
+
+### `freighterSigner(options?)` — Browser only (stateless variant)
+
+The stateless variant — re-connects on every `signAndSubmit()` call. Useful in scripts or server-side rendering contexts where you don't need to display the wallet address before a transaction. For browser dApps, prefer `connectFreighter()` above.
+
+Requires `@creit.tech/stellar-wallets-kit` as a peer dependency.
 
 ```ts
 import { freighterSigner } from '@stellar-mcp/client';
