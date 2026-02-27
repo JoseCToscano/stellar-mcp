@@ -13,6 +13,7 @@ export type {
   SignerContext,
   SignAndSubmitOptions,
   FreighterSignerOptions,
+  FreighterConnection,
   PasskeyKitSignerOptions,
 } from './types.js';
 
@@ -33,4 +34,4 @@ export { MCPClientError, MCPConnectionError, MCPToolError, TransactionError } fr
 //   import { passkeyKitSigner } from '@stellar-mcp/client/signers/passkey'
 export { secretKeySigner } from './signers/secret.js';
 export { passkeyKitSigner } from './signers/passkey.js';
-export { freighterSigner } from './signers/freighter.js';
+export { freighterSigner, connectFreighter } from './signers/freighter.js';

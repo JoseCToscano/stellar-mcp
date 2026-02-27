@@ -137,6 +137,21 @@ export interface FreighterSignerOptions {
   allowedNetworks?: string[];
 }
 
+/**
+ * Result returned by connectFreighter().
+ * Contains both the wallet address (for UI) and a pre-connected signer (for transactions).
+ */
+export interface FreighterConnection {
+  /** The connected wallet's Stellar public key (G...) */
+  address: string;
+
+  /**
+   * A ready-to-use signer adapter.
+   * Pass directly to client.signAndSubmit() — will not re-prompt Freighter for address.
+   */
+  signer: Signer;
+}
+
 /** Options for the PasskeyKit smart wallet signer */
 export interface PasskeyKitSignerOptions {
   /** Smart wallet contract ID on the Stellar network */
