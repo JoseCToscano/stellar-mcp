@@ -33,7 +33,7 @@
     "README.md"
   ],
   "bin": {
-    "mcp-generate-types": "./dist/cli/generate-types.js"
+    "mcp-generate-types": "dist/cli/generate-types.js"
   },
   "scripts": {
     "build": "tsup",
