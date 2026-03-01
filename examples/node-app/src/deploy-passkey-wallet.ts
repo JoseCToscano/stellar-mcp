@@ -7,14 +7,23 @@
  *
  * Prerequisites:
  *   1. The PasskeyKit wallet WASM must be uploaded to testnet.
- *      Upload it from the passkey-kit repo:
- *        stellar contract upload \
- *          --wasm path/to/smart_wallet.wasm \
- *          --source me --network testnet
- *      Note the WASM hash printed.
  *
- *      Known testnet WASM hash (pre-uploaded):
- *        a8860280cb9f9335b623f81a4e80e89a7920024275b177f2d4bffa6aa5fb5606
+ *      Known testnet WASM hash (pre-uploaded, passkey-kit v0.5.0):
+ *        b3eba29c256a2458faff84fc872226d29df37ad05a6a1c0efe2a95817d6765ec
+ *
+ *      If the hash above gives a 404 (testnet resets quarterly), build and
+ *      upload the WASM yourself:
+ *
+ *        # 1. Clone and build
+ *        git clone https://github.com/kalepail/passkey-kit /tmp/passkey-kit
+ *        cd /tmp/passkey-kit/contracts
+ *        stellar contract build --package smart-wallet --out-dir ./out
+ *        stellar contract optimize --wasm ./out/smart_wallet.wasm
+ *
+ *        # 2. Upload (note the hash printed)
+ *        stellar contract upload \
+ *          --wasm ./out/smart_wallet.optimized.wasm \
+ *          --source me --network testnet
  *
  *   2. Set WASM_HASH and DEPLOYER_SECRET before running:
  *        DEPLOYER_SECRET=$(stellar keys show me) \
@@ -32,7 +41,7 @@
  *   USE_HTTP=true PORT=3001 node dist/index.js
  */
 
-import { Keypair } from "@stellar/stellar-sdk";
+import { Keypair, rpc, TransactionBuilder } from "@stellar/stellar-sdk";
 import { basicNodeSigner } from "@stellar/stellar-sdk/contract";
 import { Buffer } from "buffer";
 import { PasskeyClient } from "passkey-kit";
@@ -46,10 +55,7 @@ async function main(): Promise<void> {
 
   if (!wasmHash) {
     console.error("Error: WASM_HASH is required");
-    console.error(
-      "  Upload the wallet WASM first:\n" +
-        "    stellar contract upload --wasm smart_wallet.wasm --source me --network testnet"
-    );
+    console.error("  See the comments at the top of this file for upload instructions.");
     process.exit(1);
   }
   if (!deployerSecret) {
@@ -93,16 +99,37 @@ async function main(): Promise<void> {
     }
   );
 
+  // contractId is deterministic (derived from deployer + salt) — capture before send
   const contractId = assembledTx.result.options.contractId;
 
   await assembledTx.sign({
     signTransaction: basicNodeSigner(deployer, NETWORK_PASSPHRASE).signTransaction,
   });
 
-  const result = await assembledTx.send();
+  // Submit using stellar-sdk v14 directly — passkey-kit-sdk bundles an older
+  // stellar-sdk internally that can't parse protocol-23 transaction results.
+  const server = new rpc.Server(RPC_URL, { allowHttp: RPC_URL.startsWith("http:") });
+  const tx = TransactionBuilder.fromXDR(assembledTx.signed!.toXDR(), NETWORK_PASSPHRASE);
+  const sendResponse = await server.sendTransaction(tx);
+
+  if (sendResponse.status !== "PENDING") {
+    throw new Error(`Submission failed (${sendResponse.status}): ${JSON.stringify(sendResponse)}`);
+  }
+
+  // Poll until confirmed
+  let txResponse: rpc.Api.GetTransactionResponse | undefined;
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    txResponse = await server.getTransaction(sendResponse.hash);
+    if (txResponse.status !== "NOT_FOUND") break;
+  }
+
+  if (!txResponse || txResponse.status !== "SUCCESS") {
+    throw new Error(`Transaction did not confirm (${txResponse?.status})`);
+  }
 
   console.log("Wallet deployed successfully!\n");
-  console.log("  Transaction :", result.sendTransactionResponse?.hash);
+  console.log("  Transaction :", sendResponse.hash);
   console.log("  Contract ID :", contractId);
   console.log();
   console.log("Add these to your .env files:\n");
