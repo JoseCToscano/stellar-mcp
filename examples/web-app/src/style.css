@@ -472,3 +472,14 @@ select.field-input { cursor: pointer; }
   font-size: .75rem;
   color: var(--muted);
 }
+
+/* ── Connection error banner ─────────────────────────────────────────────────── */
+#mcp-error-banner {
+  background: rgba(239,68,68,.08);
+  border-bottom: 1px solid rgba(239,68,68,.25);
+  color: var(--red);
+  font-size: .82rem;
+  font-weight: 500;
+  padding: .6rem 2rem;
+  text-align: center;
+}

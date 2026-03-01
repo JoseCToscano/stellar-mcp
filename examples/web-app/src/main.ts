@@ -177,6 +177,8 @@ $$<HTMLButtonElement>('[data-action]').forEach(btn => {
         args = { admin };
       }
 
+      // action is a runtime string from data-action — run 'npm run generate' for a
+      // fully typed client that eliminates these casts.
       const res = await client.call(action as never, args as never);
       const val = res.simulationResult;
 
@@ -337,5 +339,12 @@ $('deploy-form').addEventListener('submit', async e => {
   } catch (err) {
     setStatus('error', 'MCP error');
     logger.error('MCP connection failed', { error: String(err) });
+    // Disable query buttons and surface a banner — one clear message beats
+    // per-button failures when the server is simply not running.
+    $$<HTMLButtonElement>('[data-action]').forEach(btn => { btn.disabled = true; });
+    const banner = document.createElement('div');
+    banner.id = 'mcp-error-banner';
+    banner.textContent = `Cannot reach MCP server at ${MCP_URL} — start the server and refresh.`;
+    document.body.prepend(banner);
   }
 })();
