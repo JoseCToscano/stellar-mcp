@@ -1,0 +1,93 @@
+{
+  "name": "@stellar-mcp/client",
+  "version": "0.1.0",
+  "description": "Type-safe programmatic client for Stellar MCP servers — discover tools, call contracts, sign and submit transactions",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./signers/freighter": {
+      "types": "./dist/signers/freighter.d.ts",
+      "import": "./dist/signers/freighter.js",
+      "require": "./dist/signers/freighter.cjs"
+    },
+    "./signers/passkey": {
+      "types": "./dist/signers/passkey.d.ts",
+      "import": "./dist/signers/passkey.js",
+      "require": "./dist/signers/passkey.cjs"
+    },
+    "./signers/secret": {
+      "types": "./dist/signers/secret.d.ts",
+      "import": "./dist/signers/secret.js",
+      "require": "./dist/signers/secret.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "bin": {
+    "mcp-generate-types": "dist/cli/generate-types.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "format": "prettier --write src/ tests/",
+    "format:check": "prettier --check src/ tests/",
+    "lint": "eslint src/ tests/",
+    "lint:fix": "eslint src/ tests/ --fix",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "@creit.tech/stellar-wallets-kit": "^1.9.5",
+    "@modelcontextprotocol/sdk": "^1.24.3",
+    "@stellar/stellar-sdk": "^14.0.0",
+    "passkey-kit": "^0.10.19"
+  },
+  "peerDependenciesMeta": {
+    "@creit.tech/stellar-wallets-kit": {
+      "optional": true
+    },
+    "passkey-kit": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "json-schema-to-typescript": "^15.0.0"
+  },
+  "devDependencies": {
+    "@creit.tech/stellar-wallets-kit": "^1.9.5",
+    "@eslint/js": "^9.0.0",
+    "@modelcontextprotocol/sdk": "^1.24.3",
+    "@stellar/stellar-sdk": "^14.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.8.1",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.0.0"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "mcp",
+    "model-context-protocol",
+    "blockchain",
+    "web3"
+  ],
+  "license": "MIT"
+}

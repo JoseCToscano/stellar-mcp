@@ -244,6 +244,36 @@ Helper functions for:
 - Launchtube submission
 - SAC (Stellar Asset Contract) client creation
 
+## SDK — `@stellar-mcp/client`
+
+A type-safe programmatic client for interacting with generated MCP servers from your own code — no AI agent required.
+
+```bash
+npm install @stellar-mcp/client
+```
+
+```ts
+import { MCPClient, secretKeySigner } from '@stellar-mcp/client';
+import { Networks } from '@stellar/stellar-sdk';
+
+const client = new MCPClient({
+  url: 'http://localhost:3001/mcp',
+  networkPassphrase: Networks.TESTNET,
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+});
+
+const tools = await client.listTools();
+const { xdr } = await client.call('deploy-token', { /* ... */ });
+const result = await client.signAndSubmit(xdr!, {
+  signer: secretKeySigner(process.env.SECRET_KEY!),
+});
+client.close();
+```
+
+See [`packages/client/README.md`](./packages/client/README.md) for the full API reference including all signer adapters (Freighter, PasskeyKit, secret key), error types, logging, and integration test instructions.
+
+---
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
