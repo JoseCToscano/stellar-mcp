@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stellar MCP — Token Factory</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="header-inner">
+        <span class="logo">⬡ Stellar MCP</span>
+        <div class="header-right">
+          <span id="status-badge" class="badge badge--connecting">Connecting…</span>
+          <button id="connect-wallet" class="btn btn-outline">Connect Freighter</button>
+        </div>
+      </div>
+      <div id="wallet-info" class="wallet-info hidden">
+        <span class="wallet-dot">●</span>
+        <code id="wallet-address-full">—</code>
+      </div>
+    </header>
+
+    <main>
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="read">Read</button>
+        <button class="tab-btn" data-tab="write">Write</button>
+      </nav>
+
+      <!-- ── Read Panel ── -->
+      <section class="tab-panel" id="tab-read">
+        <div class="query-grid">
+
+          <div class="query-card">
+            <div class="query-header">
+              <span class="query-badge read">READ</span>
+              <span class="query-name">get-admin</span>
+            </div>
+            <p class="query-desc">Returns the current factory contract admin.</p>
+            <button class="btn btn-query" data-action="get-admin" data-result="qr-admin">Query</button>
+            <div class="query-result hidden" id="qr-admin"></div>
+          </div>
+
+          <div class="query-card">
+            <div class="query-header">
+              <span class="query-badge read">READ</span>
+              <span class="query-name">get-token-count</span>
+            </div>
+            <p class="query-desc">Total number of tokens deployed by this factory.</p>
+            <button class="btn btn-query" data-action="get-token-count" data-result="qr-count">Query</button>
+            <div class="query-result hidden" id="qr-count"></div>
+          </div>
+
+          <div class="query-card">
+            <div class="query-header">
+              <span class="query-badge read">READ</span>
+              <span class="query-name">get-deployed-tokens</span>
+            </div>
+            <p class="query-desc">All tokens deployed by this factory.</p>
+            <button class="btn btn-query" data-action="get-deployed-tokens" data-result="qr-all">Query</button>
+            <div class="query-result hidden" id="qr-all"></div>
+          </div>
+
+          <div class="query-card">
+            <div class="query-header">
+              <span class="query-badge read">READ</span>
+              <span class="query-name">get-tokens-by-type</span>
+            </div>
+            <p class="query-desc">Filter deployed tokens by policy type.</p>
+            <div class="field-row">
+              <label class="field-label" for="filter-type">Token Type</label>
+              <select class="field-input" id="filter-type">
+                <option value="Pausable">Pausable</option>
+                <option value="Allowlist">Allowlist</option>
+                <option value="Blocklist">Blocklist</option>
+                <option value="Capped">Capped</option>
+                <option value="Vault">Vault</option>
+              </select>
+            </div>
+            <button class="btn btn-query" data-action="get-tokens-by-type" data-result="qr-by-type">Query</button>
+            <div class="query-result hidden" id="qr-by-type"></div>
+          </div>
+
+          <div class="query-card">
+            <div class="query-header">
+              <span class="query-badge read">READ</span>
+              <span class="query-name">get-tokens-by-admin</span>
+            </div>
+            <p class="query-desc">Find tokens where a specific address is admin.</p>
+            <div class="field-row">
+              <label class="field-label" for="filter-admin">Admin Address</label>
+              <div class="field-with-btn">
+                <input class="field-input" id="filter-admin" type="text" placeholder="G…" maxlength="56" />
+                <button class="btn btn-fill" data-target="filter-admin">↓ Wallet</button>
+              </div>
+            </div>
+            <button class="btn btn-query" data-action="get-tokens-by-admin" data-result="qr-by-admin">Query</button>
+            <div class="query-result hidden" id="qr-by-admin"></div>
+          </div>
+
+          <div class="query-card">
+            <div class="query-header">
+              <span class="query-badge read">READ</span>
+              <span class="query-name">get-pending-admin</span>
+            </div>
+            <p class="query-desc">Returns the pending admin during an admin transfer.</p>
+            <button class="btn btn-query" data-action="get-pending-admin" data-result="qr-pending">Query</button>
+            <div class="query-result hidden" id="qr-pending"></div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ── Write Panel ── -->
+      <section class="tab-panel hidden" id="tab-write">
+        <div class="write-layout">
+
+          <!-- Form column -->
+          <div class="write-form-col">
+            <h2 class="form-title">deploy-token</h2>
+            <p class="form-subtitle">
+              Deploys a new Soroban token through the factory.
+              The SDK calls <code>deploy-token</code> → gets unsigned XDR →
+              <code>prepare-transaction</code> rebuilds it for your wallet →
+              Freighter signs → submits directly to Stellar RPC.
+            </p>
+
+            <div class="wallet-gate" id="wallet-gate">
+              <span>Connect your Freighter wallet to deploy a token.</span>
+              <button class="btn" id="gate-connect-btn">Connect Freighter</button>
+            </div>
+
+            <form id="deploy-form" class="hidden">
+              <fieldset class="form-group">
+                <legend>Addresses</legend>
+                <div class="field-row">
+                  <label class="field-label" for="f-deployer">Deployer <span class="req">*</span></label>
+                  <input class="field-input" id="f-deployer" type="text" readonly placeholder="Connect wallet…" />
+                </div>
+                <div class="field-row">
+                  <label class="field-label" for="f-admin">Token Admin <span class="req">*</span></label>
+                  <div class="field-with-btn">
+                    <input class="field-input" id="f-admin" type="text" placeholder="G…" maxlength="56" />
+                    <button type="button" class="btn btn-fill" data-target="f-admin">↓ Wallet</button>
+                  </div>
+                </div>
+                <div class="field-row">
+                  <label class="field-label" for="f-manager">Manager <span class="req">*</span></label>
+                  <div class="field-with-btn">
+                    <input class="field-input" id="f-manager" type="text" placeholder="G…" maxlength="56" />
+                    <button type="button" class="btn btn-fill" data-target="f-manager">↓ Wallet</button>
+                  </div>
+                </div>
+              </fieldset>
+
+              <fieldset class="form-group">
+                <legend>Token Info</legend>
+                <div class="field-row">
+                  <label class="field-label" for="f-name">Name <span class="req">*</span></label>
+                  <input class="field-input" id="f-name" type="text" placeholder="My Token" maxlength="32" required />
+                </div>
+                <div class="field-row">
+                  <label class="field-label" for="f-symbol">Symbol <span class="req">*</span></label>
+                  <input class="field-input" id="f-symbol" type="text" placeholder="MTK" maxlength="12" required />
+                </div>
+                <div class="field-row">
+                  <label class="field-label" for="f-decimals">Decimals</label>
+                  <input class="field-input field-input--sm" id="f-decimals" type="number" value="7" min="0" max="18" />
+                </div>
+                <div class="field-row">
+                  <label class="field-label" for="f-type">Token Type</label>
+                  <select class="field-input" id="f-type">
+                    <option value="Pausable">Pausable — can be paused by admin</option>
+                    <option value="Allowlist">Allowlist — restrict to approved addresses</option>
+                    <option value="Blocklist">Blocklist — block specific addresses</option>
+                    <option value="Capped">Capped — enforce a max supply</option>
+                    <option value="Vault">Vault — lock tokens</option>
+                  </select>
+                </div>
+                <div class="field-row">
+                  <label class="field-label" for="f-supply">Initial Supply</label>
+                  <input class="field-input field-input--sm" id="f-supply" type="text" value="0" placeholder="0" />
+                </div>
+              </fieldset>
+
+              <fieldset class="form-group">
+                <legend>Optional</legend>
+                <div class="field-row">
+                  <label class="field-label" for="f-asset">Wrapped Asset</label>
+                  <input class="field-input" id="f-asset" type="text" placeholder="G… (leave blank for none)" maxlength="56" />
+                </div>
+                <div class="field-row">
+                  <label class="field-label" for="f-cap">Supply Cap</label>
+                  <input class="field-input field-input--sm" id="f-cap" type="text" placeholder="null" />
+                </div>
+              </fieldset>
+
+              <button type="submit" class="btn btn-deploy" id="deploy-btn">
+                Build &amp; Sign with Freighter
+              </button>
+            </form>
+          </div>
+
+          <!-- Status column -->
+          <div class="write-status-col">
+            <div class="tx-panel" id="tx-panel">
+              <div class="tx-idle">
+                <div class="tx-idle-glyph">✦</div>
+                <p>Fill the form and click<br /><strong>Build &amp; Sign</strong> to deploy.</p>
+                <p class="tx-idle-note">
+                  The SDK will call <code>deploy-token</code> to build the
+                  XDR, then <code>prepare-transaction</code> to attach your
+                  wallet as the source. Freighter will open once the XDR is
+                  ready for signing.
+                </p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "@stellar-mcp/testing-node",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "generate": "node node_modules/@stellar-mcp/client/dist/cli/generate-types.js --url ${MCP_URL:-http://localhost:3001/mcp} --out src/mcp-types.ts",
+    "smoke": "npm run generate && npx tsx src/smoke-test.ts",
+    "deploy-passkey-wallet": "npx tsx src/deploy-passkey-wallet.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.24.3",
+    "@stellar-mcp/client": "^0.1.0",
+    "@stellar/stellar-sdk": "^14.0.0",
+    "passkey-kit": "^0.10.19"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.1",
+    "dotenv": "^16.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0"
+  },
+  "packageManager": "pnpm@10.19.0+sha512.c9fc7236e92adf5c8af42fd5bf1612df99c2ceb62f27047032f4720b33f8eacdde311865e91c411f2774f618d82f320808ecb51718bfa82c060c4ba7c76a32b8"
+}
