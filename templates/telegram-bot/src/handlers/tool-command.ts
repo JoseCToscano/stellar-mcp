@@ -14,6 +14,7 @@
 //   5. User taps ▶ Execute — tool is called with all collected args
 
 import type { Context } from 'grammy';
+import type { ToolInfo } from '@stellar-mcp/client';
 import { MCPToolError, MCPConnectionError, secretKeySigner } from '@stellar-mcp/client';
 import { createClient, canSign } from '../mcp.js';
 import {
@@ -33,22 +34,31 @@ import { commandToTool } from '../commands.js';
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 // Called when a user sends a dynamic tool command like /deploy_token.
-export async function handleToolCommand(ctx: Context, toolCommand: string): Promise<void> {
+// Accepts an optional pre-fetched ToolInfo to avoid a redundant listTools() call
+// (bot.ts already fetches tools to verify the command exists).
+export async function handleToolCommand(
+  ctx: Context,
+  toolCommand: string,
+  prefetchedTool?: ToolInfo,
+): Promise<void> {
   const toolName = commandToTool(toolCommand);
   const chatId = ctx.chat!.id;
 
-  const client = createClient();
-  let tool;
-  try {
-    const tools = await client.listTools();
-    tool = tools.find((t) => t.name === toolName);
-  } finally {
-    client.close();
+  // Use the pre-fetched tool if provided, otherwise fetch fresh
+  let tool = prefetchedTool;
+  if (!tool) {
+    const client = createClient();
+    try {
+      const tools = await client.listTools();
+      tool = tools.find((t) => t.name === toolName);
+    } finally {
+      client.close();
+    }
   }
 
   if (!tool) {
     await ctx.reply(
-      `Tool <b>${toolName}</b> not found on the connected MCP server.\n\nUse /tools to see what's available.`,
+      `Tool <b>${esc(toolName)}</b> not found on the connected MCP server.\n\nUse /tools to see what's available.`,
       { parse_mode: 'HTML' },
     );
     return;
@@ -56,7 +66,7 @@ export async function handleToolCommand(ctx: Context, toolCommand: string): Prom
 
   // No args → execute immediately (read-only tools like get-admin)
   if (extractArgs(tool).length === 0) {
-    const statusMsg = await ctx.reply(`⏳ Calling <b>${toolName}</b>...`, { parse_mode: 'HTML' });
+    const statusMsg = await ctx.reply(`⏳ Calling <b>${esc(toolName)}</b>...`, { parse_mode: 'HTML' });
     await executeTool(ctx, chatId, statusMsg.message_id, toolName, {});
     return;
   }
@@ -66,8 +76,7 @@ export async function handleToolCommand(ctx: Context, toolCommand: string): Prom
 
   const state = startForm(chatId, tool, formMsg.message_id);
   if (!state) {
-    // extractArgs returned > 0 but startForm returned null — shouldn't happen
-    await ctx.api.editMessageText(chatId, formMsg.message_id, `⏳ Calling <b>${toolName}</b>...`, {
+    await ctx.api.editMessageText(chatId, formMsg.message_id, `⏳ Calling <b>${esc(toolName)}</b>...`, {
       parse_mode: 'HTML',
     });
     await executeTool(ctx, chatId, formMsg.message_id, toolName, {});
@@ -111,7 +120,7 @@ export async function handleFormCallback(ctx: Context): Promise<void> {
     cancelForm(chatId);
 
     const messageId = ctx.callbackQuery!.message!.message_id;
-    await ctx.api.editMessageText(chatId, messageId, `⏳ Calling <b>${toolName}</b>...`, {
+    await ctx.api.editMessageText(chatId, messageId, `⏳ Calling <b>${esc(toolName)}</b>...`, {
       parse_mode: 'HTML',
     });
     await executeTool(ctx, chatId, messageId, toolName, collectedArgs);
@@ -145,7 +154,11 @@ export async function handleFormCallback(ctx: Context): Promise<void> {
     return;
   }
 
-  if (!state) return; // No active form — ignore stale callbacks
+  // No active form — likely a cold start wiped the in-memory state
+  if (!state) {
+    await ctx.editMessageText('Session expired. Please send the command again to start over.');
+    return;
+  }
 
   // ── Set field ──────────────────────────────────────────────────────────────
   // form:set:<fieldIndex>
@@ -160,10 +173,7 @@ export async function handleFormCallback(ctx: Context): Promise<void> {
     } else if (arg.enum && arg.enum.length > 0) {
       await ctx.editMessageReplyMarkup({ reply_markup: buildEnumSubKeyboard(fieldIndex, arg.enum) });
     } else {
-      // Free-text input: send ForceReply prompt, update form card on reply
-      setPendingField(chatId, state.pendingFieldIndex === fieldIndex ? fieldIndex : fieldIndex);
-
-      // Update the form card text to show the "awaiting input" hint
+      // Free-text input: update form card to show "awaiting input" hint, then send ForceReply
       setPendingField(chatId, fieldIndex);
       const updatedState = getForm(chatId)!;
       await ctx.api.editMessageText(chatId, state.formMessageId, formatForm(updatedState), {

@@ -35,6 +35,8 @@ bot.command('cancel', async (ctx) => {
   await ctx.reply('Cancelled. Use a command to start a new operation.');
 });
 
+const STATIC_COMMANDS = new Set(['start', 'tools', 'call', 'cancel']);
+
 // ── Dynamic tool commands ─────────────────────────────────────────────────────
 // Route any command that matches a known MCP tool to the form card handler.
 // We do a runtime lookup (rather than pre-building handlers at startup) so it
@@ -48,8 +50,7 @@ bot.on(':entities:bot_command', async (ctx) => {
   const command = rawText.slice(entity.offset + 1, entity.offset + entity.length);
   const commandName = command.split('@')[0].toLowerCase();
 
-  const staticCommands = new Set(['start', 'tools', 'call', 'cancel']);
-  if (staticCommands.has(commandName)) return;
+  if (STATIC_COMMANDS.has(commandName)) return;
 
   const client = createClient();
   try {
@@ -57,7 +58,8 @@ bot.on(':entities:bot_command', async (ctx) => {
     const toolName = commandName.replace(/_/g, '-');
     const tool = tools.find((t) => toolToCommand(t.name) === commandName || t.name === toolName);
     if (tool) {
-      await handleToolCommand(ctx, commandName);
+      // Pass the pre-fetched tool so handleToolCommand doesn't re-fetch
+      await handleToolCommand(ctx, commandName, tool);
     }
   } catch {
     // MCP server unreachable — silently ignore unknown commands

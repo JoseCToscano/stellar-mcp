@@ -7,8 +7,8 @@
 // Vercel KV (Redis):
 //
 //   import { kv } from '@vercel/kv';
-//   async function load(chatId: number) { return kv.get<CoreMessage[]>(`chat:${chatId}`) ?? []; }
-//   async function save(chatId: number, msgs: CoreMessage[]) { await kv.setex(`chat:${chatId}`, 86400, msgs); }
+//   async function load(chatId: number) { return kv.get<ModelMessage[]>(`chat:${chatId}`) ?? []; }
+//   async function save(chatId: number, msgs: ModelMessage[]) { await kv.setex(`chat:${chatId}`, 86400, msgs); }
 
 import type { ModelMessage } from 'ai';
 
