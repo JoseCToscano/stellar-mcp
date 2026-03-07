@@ -13,6 +13,7 @@ import { MCPToolError, MCPConnectionError, secretKeySigner } from '@stellar-mcp/
 import { createClient, canSign } from '../mcp.js';
 import { buildToolsKeyboard } from '../keyboards.js';
 import {
+  esc,
   formatToolDetail,
   formatCallResult,
   formatError,
@@ -57,7 +58,7 @@ export async function handleToolCallback(ctx: Context): Promise<void> {
     const tool = tools.find((t) => t.name === toolName);
 
     if (!tool) {
-      await ctx.editMessageText(`Tool <b>${toolName}</b> not found on this server.`, {
+      await ctx.editMessageText(`Tool <b>${esc(toolName)}</b> not found on this server.`, {
         parse_mode: 'HTML',
       });
       return;
@@ -104,7 +105,7 @@ async function showToolDetail(ctx: Context, toolName: string): Promise<void> {
 
     if (!tool) {
       await ctx.reply(
-        `Tool <b>${toolName}</b> not found.\n\nUse /tools to see available tools.`,
+        `Tool <b>${esc(toolName)}</b> not found.\n\nUse /tools to see available tools.`,
         { parse_mode: 'HTML' },
       );
       return;
@@ -147,7 +148,7 @@ async function executeTool(
   }
 
   // Show immediate feedback — edited in place when done
-  const statusMsg = await ctx.reply(`⏳ Calling <b>${toolName}</b>...`, { parse_mode: 'HTML' });
+  const statusMsg = await ctx.reply(`⏳ Calling <b>${esc(toolName)}</b>...`, { parse_mode: 'HTML' });
 
   const client = createClient();
   try {

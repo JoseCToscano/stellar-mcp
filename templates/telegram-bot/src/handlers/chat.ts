@@ -6,7 +6,7 @@
 import type { Context } from 'grammy';
 import { chat } from '../ai.js';
 import { getHistory, appendHistory } from '../history.js';
-import { esc } from '../formatters.js';
+import { esc, truncateMessage } from '../formatters.js';
 
 export async function handleChat(ctx: Context): Promise<void> {
   const chatId = ctx.chat?.id;
@@ -24,7 +24,7 @@ export async function handleChat(ctx: Context): Promise<void> {
     appendHistory(chatId, 'user', text);
     appendHistory(chatId, 'assistant', reply);
 
-    await ctx.api.editMessageText(statusMsg.chat.id, statusMsg.message_id, reply);
+    await ctx.api.editMessageText(statusMsg.chat.id, statusMsg.message_id, truncateMessage(reply));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await ctx.api.editMessageText(

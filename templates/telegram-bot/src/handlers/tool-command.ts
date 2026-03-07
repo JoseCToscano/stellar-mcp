@@ -64,6 +64,21 @@ export async function handleToolCommand(
     return;
   }
 
+  // If the user already has an active form, cancel it and deactivate the old card
+  const existing = getForm(chatId);
+  if (existing) {
+    try {
+      await ctx.api.editMessageText(
+        chatId,
+        existing.formMessageId,
+        '✗ Cancelled (new command started).',
+      );
+    } catch {
+      // Old message may already be gone — ignore
+    }
+    cancelForm(chatId);
+  }
+
   // No args → execute immediately (read-only tools like get-admin)
   if (extractArgs(tool).length === 0) {
     const statusMsg = await ctx.reply(`⏳ Calling <b>${esc(toolName)}</b>...`, { parse_mode: 'HTML' });

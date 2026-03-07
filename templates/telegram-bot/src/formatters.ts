@@ -11,10 +11,20 @@
 import type { ToolInfo, CallResult, SubmitResult } from '@stellar-mcp/client';
 import type { FormState } from './conversation.js';
 
-// ─── HTML escaping ────────────────────────────────────────────────────────────
+// ─── HTML escaping & limits ───────────────────────────────────────────────────
 
 export function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Telegram enforces a 4096-char limit on message text.
+// Truncate safely so callers never hit a 400 error.
+const TELEGRAM_MSG_LIMIT = 4096;
+const TRUNCATION_SUFFIX = '\n\n<i>… (truncated)</i>';
+
+export function truncateMessage(text: string): string {
+  if (text.length <= TELEGRAM_MSG_LIMIT) return text;
+  return text.slice(0, TELEGRAM_MSG_LIMIT - TRUNCATION_SUFFIX.length) + TRUNCATION_SUFFIX;
 }
 
 // ─── /start ───────────────────────────────────────────────────────────────────
@@ -49,13 +59,13 @@ export function formatToolsList(tools: ToolInfo[]): string {
     (t) => `<b>${esc(t.name)}</b> — ${esc(t.description || 'No description')}`,
   );
 
-  return [
+  return truncateMessage([
     `<b>${tools.length} tool${tools.length === 1 ? '' : 's'} available:</b>`,
     '',
     ...lines,
     '',
     'Use /call to interact with them.',
-  ].join('\n');
+  ].join('\n'));
 }
 
 // ─── Tool detail (inline keyboard callback response) ─────────────────────────

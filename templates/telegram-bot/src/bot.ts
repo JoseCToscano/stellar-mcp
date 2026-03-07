@@ -16,7 +16,7 @@ import { handleCall, handleToolCallback } from './handlers/call.js';
 import { handleChat } from './handlers/chat.js';
 import { handleToolCommand, handleFormCallback, handleFormTextReply } from './handlers/tool-command.js';
 import { cancelForm, getForm } from './conversation.js';
-import { toolToCommand } from './commands.js';
+import { toolToCommand, commandToTool } from './commands.js';
 import { createClient } from './mcp.js';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -55,7 +55,7 @@ bot.on(':entities:bot_command', async (ctx) => {
   const client = createClient();
   try {
     const tools = await client.listTools();
-    const toolName = commandName.replace(/_/g, '-');
+    const toolName = commandToTool(commandName);
     const tool = tools.find((t) => toolToCommand(t.name) === commandName || t.name === toolName);
     if (tool) {
       // Pass the pre-fetched tool so handleToolCommand doesn't re-fetch
