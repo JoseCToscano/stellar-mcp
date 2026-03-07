@@ -1,0 +1,31 @@
+{
+  "name": "@stellar-mcp/telegram-bot-template",
+  "version": "0.1.0",
+  "description": "Telegram bot template demonstrating @stellar-mcp/client — connect any Stellar MCP server to Telegram",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx scripts/dev.ts",
+    "setup": "tsx scripts/setup.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.58",
+    "@ai-sdk/openai": "^3.0.41",
+    "@modelcontextprotocol/sdk": "^1.24.3",
+    "@stellar-mcp/client": "^0.1.0",
+    "@stellar/stellar-sdk": "^14.0.0",
+    "ai": "^6.0.116",
+    "grammy": "^1.30.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "dotenv": "^16.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
