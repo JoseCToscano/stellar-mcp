@@ -13,8 +13,7 @@ export async function handleChat(ctx: Context): Promise<void> {
   const text = ctx.message?.text;
   if (!chatId || !text) return;
 
-  // Show immediate feedback
-  const statusMsg = await ctx.reply('💭 Thinking...');
+  const statusMsg = await ctx.reply('🤖 Thinking…');
 
   try {
     const history = await getHistory(chatId);

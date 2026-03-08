@@ -1,12 +1,12 @@
 // src/handlers/call.ts
 //
-// Handles three distinct paths:
+// Handles three paths:
 //   1. /call              → show inline keyboard of all tools
-//   2. /call <tool>       → show tool detail (description + arg preview + example)
-//   3. /call <tool> {...} → execute the tool, sign + submit if XDR returned
+//   2. /call <tool>       → launch form card (or execute if no args)
+//   3. /call <tool> {...} → execute the tool directly with JSON args
 //
-// Also handles callback queries from the inline keyboard:
-//   tool:<name>           → show tool detail (same as path 2 above)
+// Callback query from the tool picker keyboard:
+//   tool:<name>           → same as (2), reusing the picker message
 
 import type { Context } from 'grammy';
 import { MCPToolError, MCPConnectionError, secretKeySigner } from '@stellar-mcp/client';
@@ -14,11 +14,11 @@ import { createClient, canSign } from '../mcp.js';
 import { buildToolsKeyboard } from '../keyboards.js';
 import {
   esc,
-  formatToolDetail,
   formatCallResult,
   formatError,
   formatConnectionError,
 } from '../formatters.js';
+import { handleToolCommand } from './tool-command.js';
 
 // ─── /call command ────────────────────────────────────────────────────────────
 
@@ -36,8 +36,8 @@ export async function handleCall(ctx: Context): Promise<void> {
   const jsonPart = spaceIdx === -1 ? '' : args.slice(spaceIdx + 1).trim();
 
   if (!jsonPart) {
-    // No args provided — show tool detail
-    await showToolDetail(ctx, toolName);
+    // No args provided — launch form card (or execute directly for no-arg tools)
+    await handleToolCommand(ctx, toolName);
   } else {
     // Args provided — execute the tool
     await executeTool(ctx, toolName, jsonPart);
@@ -45,31 +45,18 @@ export async function handleCall(ctx: Context): Promise<void> {
 }
 
 // ─── Callback query: tool:<name> ──────────────────────────────────────────────
+//
+// Instead of showing a static text detail, this now launches the form card
+// (or executes directly for no-arg tools) — reusing the tool picker message.
 
 export async function handleToolCallback(ctx: Context): Promise<void> {
-  // Answer immediately to dismiss Telegram's loading spinner on the button
   await ctx.answerCallbackQuery();
 
   const toolName = (ctx.callbackQuery?.data ?? '').replace(/^tool:/, '');
-  const client = createClient();
+  const messageId = ctx.callbackQuery!.message!.message_id;
 
-  try {
-    const tools = await client.listTools();
-    const tool = tools.find((t) => t.name === toolName);
-
-    if (!tool) {
-      await ctx.editMessageText(`Tool <b>${esc(toolName)}</b> not found on this server.`, {
-        parse_mode: 'HTML',
-      });
-      return;
-    }
-
-    await ctx.editMessageText(formatToolDetail(tool), { parse_mode: 'HTML' });
-  } catch (err) {
-    await ctx.editMessageText(formatConnectionError(err), { parse_mode: 'HTML' });
-  } finally {
-    client.close();
-  }
+  // Delegate to the form card handler, reusing the tool picker message
+  await handleToolCommand(ctx, toolName, undefined, messageId);
 }
 
 // ─── Internal: show tool picker ───────────────────────────────────────────────
@@ -85,33 +72,10 @@ async function showToolPicker(ctx: Context): Promise<void> {
     }
 
     const keyboard = buildToolsKeyboard(tools);
-    await ctx.reply('Choose a tool to inspect or call:', {
+    await ctx.reply('⚡ <b>Select a tool</b>\n\n<i>Tap to configure and execute</i>', {
+      parse_mode: 'HTML',
       reply_markup: keyboard,
     });
-  } catch (err) {
-    await ctx.reply(formatConnectionError(err), { parse_mode: 'HTML' });
-  } finally {
-    client.close();
-  }
-}
-
-// ─── Internal: show tool detail ───────────────────────────────────────────────
-
-async function showToolDetail(ctx: Context, toolName: string): Promise<void> {
-  const client = createClient();
-  try {
-    const tools = await client.listTools();
-    const tool = tools.find((t) => t.name === toolName);
-
-    if (!tool) {
-      await ctx.reply(
-        `Tool <b>${esc(toolName)}</b> not found.\n\nUse /tools to see available tools.`,
-        { parse_mode: 'HTML' },
-      );
-      return;
-    }
-
-    await ctx.reply(formatToolDetail(tool), { parse_mode: 'HTML' });
   } catch (err) {
     await ctx.reply(formatConnectionError(err), { parse_mode: 'HTML' });
   } finally {

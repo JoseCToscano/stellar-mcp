@@ -36,10 +36,15 @@ import { commandToTool } from '../commands.js';
 // Called when a user sends a dynamic tool command like /deploy_token.
 // Accepts an optional pre-fetched ToolInfo to avoid a redundant listTools() call
 // (bot.ts already fetches tools to verify the command exists).
+//
+// reuseMessageId: if provided, edits this message in place instead of sending a
+// new one. Used when launching a form from the /call inline keyboard callback —
+// the tool picker message transforms directly into the form card.
 export async function handleToolCommand(
   ctx: Context,
   toolCommand: string,
   prefetchedTool?: ToolInfo,
+  reuseMessageId?: number,
 ): Promise<void> {
   const toolName = commandToTool(toolCommand);
   const chatId = ctx.chat!.id;
@@ -57,16 +62,18 @@ export async function handleToolCommand(
   }
 
   if (!tool) {
-    await ctx.reply(
-      `Tool <b>${esc(toolName)}</b> not found on the connected MCP server.\n\nUse /tools to see what's available.`,
-      { parse_mode: 'HTML' },
-    );
+    const notFound = `Tool <b>${esc(toolName)}</b> not found on the connected MCP server.\n\nUse /tools to see what's available.`;
+    if (reuseMessageId) {
+      await ctx.api.editMessageText(chatId, reuseMessageId, notFound, { parse_mode: 'HTML' });
+    } else {
+      await ctx.reply(notFound, { parse_mode: 'HTML' });
+    }
     return;
   }
 
   // If the user already has an active form, cancel it and deactivate the old card
   const existing = getForm(chatId);
-  if (existing) {
+  if (existing && existing.formMessageId !== reuseMessageId) {
     try {
       await ctx.api.editMessageText(
         chatId,
@@ -81,24 +88,39 @@ export async function handleToolCommand(
 
   // No args → execute immediately (read-only tools like get-admin)
   if (extractArgs(tool).length === 0) {
-    const statusMsg = await ctx.reply(`⏳ Calling <b>${esc(toolName)}</b>...`, { parse_mode: 'HTML' });
-    await executeTool(ctx, chatId, statusMsg.message_id, toolName, {});
+    let messageId: number;
+    if (reuseMessageId) {
+      await ctx.api.editMessageText(chatId, reuseMessageId, `⏳ Calling <b>${esc(toolName)}</b>...`, {
+        parse_mode: 'HTML',
+      });
+      messageId = reuseMessageId;
+    } else {
+      const statusMsg = await ctx.reply(`⏳ Calling <b>${esc(toolName)}</b>...`, { parse_mode: 'HTML' });
+      messageId = statusMsg.message_id;
+    }
+    await executeTool(ctx, chatId, messageId, toolName, {});
     return;
   }
 
-  // Send loading placeholder, then replace it with the form card
-  const formMsg = await ctx.reply('⏳ Loading...', { parse_mode: 'HTML' });
+  // Show form card — reuse existing message or send a new one
+  let formMessageId: number;
+  if (reuseMessageId) {
+    formMessageId = reuseMessageId;
+  } else {
+    const formMsg = await ctx.reply('⏳ Loading...', { parse_mode: 'HTML' });
+    formMessageId = formMsg.message_id;
+  }
 
-  const state = startForm(chatId, tool, formMsg.message_id);
+  const state = startForm(chatId, tool, formMessageId);
   if (!state) {
-    await ctx.api.editMessageText(chatId, formMsg.message_id, `⏳ Calling <b>${esc(toolName)}</b>...`, {
+    await ctx.api.editMessageText(chatId, formMessageId, `⏳ Calling <b>${esc(toolName)}</b>...`, {
       parse_mode: 'HTML',
     });
-    await executeTool(ctx, chatId, formMsg.message_id, toolName, {});
+    await executeTool(ctx, chatId, formMessageId, toolName, {});
     return;
   }
 
-  await ctx.api.editMessageText(chatId, formMsg.message_id, formatForm(state), {
+  await ctx.api.editMessageText(chatId, formMessageId, formatForm(state), {
     parse_mode: 'HTML',
     reply_markup: buildFormKeyboard(state),
   });

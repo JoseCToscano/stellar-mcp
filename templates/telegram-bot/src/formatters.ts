@@ -27,24 +27,27 @@ export function truncateMessage(text: string): string {
   return text.slice(0, TELEGRAM_MSG_LIMIT - TRUNCATION_SUFFIX.length) + TRUNCATION_SUFFIX;
 }
 
+// ─── Shared ──────────────────────────────────────────────────────────────────
+
+const LINE = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+
 // ─── /start ───────────────────────────────────────────────────────────────────
 
 export function formatWelcome(serverUrl: string, aiEnabled: boolean): string {
-  const aiNote = aiEnabled
-    ? '\n\nAI mode is <b>on</b> — just type naturally to interact with the contract.'
-    : '\n\nTip: Set <code>AI_ENABLED=true</code> + an API key for natural language chat.';
+  const aiLine = aiEnabled
+    ? '🤖 AI mode is <b>on</b> — type naturally to interact.'
+    : '💡 <code>AI_ENABLED=true</code> + API key → natural language chat';
 
   return [
-    '<b>Stellar MCP Bot</b>',
+    '⚡ <b>Stellar MCP Bot</b>',
+    LINE,
     '',
-    'Connected to:',
-    `<code>${esc(serverUrl)}</code>`,
+    `🔗 <code>${esc(serverUrl)}</code>`,
     '',
-    '<b>Commands:</b>',
-    '/tools — list all available contract tools',
-    '/call — browse tools interactively',
-    '/call &lt;tool&gt; [json-args] — call a tool directly',
-    aiNote,
+    '/tools — list contract functions',
+    '/call  — browse &amp; execute interactively',
+    '',
+    aiLine,
   ].join('\n');
 }
 
@@ -55,16 +58,22 @@ export function formatToolsList(tools: ToolInfo[]): string {
     return 'No tools found on the connected MCP server.';
   }
 
-  const lines = tools.map(
-    (t) => `<b>${esc(t.name)}</b> — ${esc(t.description || 'No description')}`,
-  );
+  const lines = tools.map((t) => {
+    const hasArgs = Object.keys(
+      (t.inputSchema.properties ?? {}) as Record<string, unknown>,
+    ).length > 0;
+    const icon = hasArgs ? '📝' : '👁';
+    return `${icon} <b>${esc(t.name)}</b>\n     <i>${esc(t.description || 'No description')}</i>`;
+  });
 
   return truncateMessage([
-    `<b>${tools.length} tool${tools.length === 1 ? '' : 's'} available:</b>`,
+    `📋 <b>${tools.length} tool${tools.length === 1 ? '' : 's'} available</b>`,
+    LINE,
     '',
     ...lines,
     '',
-    'Use /call to interact with them.',
+    `<i>👁 = read-only  ·  📝 = requires input</i>`,
+    '<i>Use /call to browse and execute</i>',
   ].join('\n'));
 }
 
@@ -106,13 +115,17 @@ export function formatCallResult(
     // Write operation that was signed and submitted
     const ok = submitResult.status === 'SUCCESS';
     const lines = [
-      ok ? '✅ Transaction submitted!' : '❌ Transaction failed.',
+      ok ? '✅ <b>Transaction Submitted</b>' : '❌ <b>Transaction Failed</b>',
+      LINE,
       '',
-      `Hash: <code>${esc(submitResult.hash)}</code>`,
-      `Status: <b>${esc(submitResult.status)}</b>`,
+      `<b>Hash</b>`,
+      `<code>${esc(submitResult.hash)}</code>`,
+      '',
+      `<b>Status:</b> ${esc(submitResult.status)}`,
     ];
     if (submitResult.hash) {
-      lines.push(`<a href="${explorerBase}/tx/${submitResult.hash}">View on Stellar Expert</a>`);
+      lines.push('');
+      lines.push(`🔗 <a href="${explorerBase}/tx/${submitResult.hash}">View on Stellar Expert</a>`);
     }
     return lines.join('\n');
   }
@@ -120,18 +133,20 @@ export function formatCallResult(
   if (result.xdr) {
     // Write operation but no SIGNER_SECRET — return the unsigned XDR
     return [
-      `<b>${esc(toolName)}</b> — transaction built (unsigned)`,
+      `📄 <b>${esc(toolName)}</b> — unsigned transaction`,
+      LINE,
       '',
-      'XDR:',
-      `<code>${esc(result.xdr.slice(0, 100))}...</code>`,
+      '<b>XDR:</b>',
+      `<code>${esc(result.xdr.slice(0, 200))}…</code>`,
       '',
-      '<i>Set SIGNER_SECRET in .env to auto-sign write transactions.</i>',
+      '💡 <i>Set SIGNER_SECRET to auto-sign transactions.</i>',
     ].join('\n');
   }
 
   // Read-only result
   return [
-    `<b>${esc(toolName)}</b>`,
+    `👁 <b>${esc(toolName)}</b>`,
+    LINE,
     '',
     formatResultData(result),
   ].join('\n');
@@ -139,12 +154,24 @@ export function formatCallResult(
 
 export function formatError(toolName: string, err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
-  return `❌ Error calling <b>${esc(toolName)}</b>:\n<code>${esc(msg)}</code>`;
+  return [
+    `❌ <b>Error</b> — ${esc(toolName)}`,
+    LINE,
+    '',
+    `<code>${esc(msg)}</code>`,
+  ].join('\n');
 }
 
 export function formatConnectionError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
-  return `❌ Could not reach MCP server:\n<code>${esc(msg)}</code>`;
+  return [
+    '❌ <b>Connection Failed</b>',
+    LINE,
+    '',
+    `<code>${esc(msg)}</code>`,
+    '',
+    '<i>Check that MCP_SERVER_URL is correct and the server is running.</i>',
+  ].join('\n');
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -230,26 +257,36 @@ export function buildExampleJson(inputSchema: Record<string, unknown>): string {
 // Renders the form card — the single persistent message showing all parameters
 // and their current values. Edited in place as the user fills fields.
 export function formatForm(state: FormState): string {
-  const lines: string[] = [`🔧 <b>${esc(state.toolName)}</b>`];
+  const lines: string[] = [
+    `🔧 <b>${esc(state.toolName)}</b>`,
+  ];
 
   if (state.toolDescription) {
     lines.push(`<i>${esc(state.toolDescription)}</i>`);
   }
 
+  lines.push(LINE);
   lines.push('');
+
+  const filledCount = Object.keys(state.collectedArgs).length;
+  const requiredCount = state.args.filter((a) => a.required).length;
+  const requiredFilled = state.args.filter(
+    (a) => a.required && Object.prototype.hasOwnProperty.call(state.collectedArgs, a.name),
+  ).length;
 
   state.args.forEach((arg) => {
     const isSet = Object.prototype.hasOwnProperty.call(state.collectedArgs, arg.name);
-    const icon = isSet ? '✅' : '⬜';
-    const req = arg.required ? ' <i>*</i>' : '';
+    const icon = isSet ? '✅' : arg.required ? '⬜' : '○';
+    const req = arg.required && !isSet ? ' *' : '';
 
     if (isSet) {
       const val = state.collectedArgs[arg.name];
       const str = typeof val === 'string' ? val : JSON.stringify(val);
-      const display = str.length > 42 ? str.slice(0, 40) + '…' : str;
-      lines.push(`${icon} <b>${esc(arg.name)}</b>${req}: <code>${esc(display)}</code>`);
+      const display = str.length > 36 ? str.slice(0, 34) + '…' : str;
+      lines.push(`${icon} <b>${esc(arg.name)}</b>${req}  <code>${esc(display)}</code>`);
     } else {
-      lines.push(`${icon} <b>${esc(arg.name)}</b>${req}: —`);
+      const typeHint = arg.type !== 'any' ? `<i>${esc(arg.type)}</i>` : '';
+      lines.push(`${icon} <b>${esc(arg.name)}</b>${req}  ${typeHint}`);
     }
   });
 
@@ -258,10 +295,13 @@ export function formatForm(state: FormState): string {
   if (state.pendingFieldIndex !== null) {
     const arg = state.args[state.pendingFieldIndex];
     if (arg) {
-      lines.push(`<i>⌨️  Type a value for <b>${esc(arg.name)}</b> and send it.</i>`);
+      lines.push(`⌨️ <i>Type a value for <b>${esc(arg.name)}</b> and send it.</i>`);
     }
   } else {
-    lines.push('<i>* required  ·  tap a field button below to set it</i>');
+    const progress = requiredCount > 0
+      ? `${requiredFilled}/${requiredCount} required`
+      : `${filledCount}/${state.args.length}`;
+    lines.push(`<i>${progress}  ·  tap a field to set it</i>`);
   }
 
   return lines.join('\n');

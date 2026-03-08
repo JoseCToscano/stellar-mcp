@@ -11,14 +11,17 @@ import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-// Load .env before importing bot.ts — bot.ts reads env vars at module init time.
+// ── Load .env FIRST ──────────────────────────────────────────────────────────
+// Must happen before any app modules are imported, because bot.ts reads
+// TELEGRAM_BOT_TOKEN at module init time. Dynamic imports below ensure this.
 const require = createRequire(import.meta.url);
 const dotenv = require('dotenv') as { config: (o: { path: string }) => void };
 dotenv.config({ path: join(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
 
-import { bot } from '../src/bot.js';
-import { createClient } from '../src/mcp.js';
-import { registerBotCommands } from '../src/commands.js';
+// ── Dynamic imports (after dotenv) ───────────────────────────────────────────
+const { bot } = await import('../src/bot.js');
+const { createClient } = await import('../src/mcp.js');
+const { registerBotCommands } = await import('../src/commands.js');
 
 console.log('[dev] Starting Stellar MCP Telegram Bot (long polling)...');
 console.log(`[dev] MCP server : ${process.env.MCP_SERVER_URL ?? '(not set)'}`);

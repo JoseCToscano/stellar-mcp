@@ -13,13 +13,15 @@ import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
+// ── Load .env FIRST ──────────────────────────────────────────────────────────
 const require = createRequire(import.meta.url);
 const dotenv = require('dotenv') as { config: (o: { path: string }) => void };
 dotenv.config({ path: join(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
 
-import { bot } from '../src/bot.js';
-import { createClient } from '../src/mcp.js';
-import { registerBotCommands } from '../src/commands.js';
+// ── Dynamic imports (after dotenv) ───────────────────────────────────────────
+const { bot } = await import('../src/bot.js');
+const { createClient } = await import('../src/mcp.js');
+const { registerBotCommands } = await import('../src/commands.js');
 
 async function setup() {
   console.log('[setup] Connecting to MCP server:', process.env.MCP_SERVER_URL);
@@ -30,7 +32,7 @@ async function setup() {
     const tools = await client.listTools();
     console.log(`[setup] Found ${tools.length} tools:`, tools.map((t) => t.name).join(', '));
     await registerBotCommands(bot, tools);
-    console.log('[setup] ✅ Bot commands registered with Telegram.');
+    console.log('[setup] Bot commands registered with Telegram.');
   } finally {
     client.close();
   }
@@ -40,7 +42,7 @@ async function setup() {
   if (vercelUrl) {
     const webhookUrl = `${vercelUrl.replace(/\/$/, '')}/api/webhook`;
     await bot.api.setWebhook(webhookUrl);
-    console.log(`[setup] ✅ Webhook set to: ${webhookUrl}`);
+    console.log(`[setup] Webhook set to: ${webhookUrl}`);
 
     // Verify
     const info = await bot.api.getWebhookInfo();
@@ -49,7 +51,7 @@ async function setup() {
       pending_update_count: info.pending_update_count,
     });
   } else {
-    console.log('[setup] ℹ️  VERCEL_URL not set — skipping webhook registration.');
+    console.log('[setup] VERCEL_URL not set — skipping webhook registration.');
     console.log('[setup] To set webhook manually:');
     console.log(
       `[setup]   VERCEL_URL=https://your-app.vercel.app pnpm setup`,
@@ -60,6 +62,6 @@ async function setup() {
 }
 
 setup().catch((err) => {
-  console.error('[setup] ❌ Error:', err);
+  console.error('[setup] Error:', err);
   process.exit(1);
 });
