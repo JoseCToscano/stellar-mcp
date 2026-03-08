@@ -106,6 +106,53 @@ export function isFormComplete(state: FormState): boolean {
     .every((a) => Object.prototype.hasOwnProperty.call(state.collectedArgs, a.name));
 }
 
+// ─── Pending sign state ──────────────────────────────────────────────────────
+//
+// After a write operation is called, we store the XDR here until the user
+// confirms they want to sign and submit. This avoids auto-signing.
+
+export interface PendingSign {
+  chatId: number;
+  messageId: number;
+  toolName: string;
+  xdr: string;
+}
+
+const pendingSigns = new Map<number, PendingSign>();
+
+export function setPendingSign(
+  chatId: number,
+  messageId: number,
+  toolName: string,
+  xdr: string,
+): PendingSign {
+  const state: PendingSign = { chatId, messageId, toolName, xdr };
+  pendingSigns.set(chatId, state);
+  return state;
+}
+
+export function getPendingSign(chatId: number): PendingSign | undefined {
+  return pendingSigns.get(chatId);
+}
+
+export function clearPendingSign(chatId: number): void {
+  pendingSigns.delete(chatId);
+}
+
+// ─── Read vs Write heuristic ────────────────────────────────────────────────
+//
+// Soroban simulates ALL contract calls, so both read and write tools return XDR.
+// We use the tool name to determine intent: read-only tools start with
+// well-known prefixes (get-, list-, query-, etc.).
+
+const READ_PREFIXES = /^(get|list|query|fetch|find|search|is|has|check|count|show|view|read)/i;
+
+export function isReadOperation(toolName: string): boolean {
+  // Normalize: "get-admin" → "getadmin", "get_admin" → "getadmin"
+  const normalized = toolName.replace(/[-_]/g, '');
+  return READ_PREFIXES.test(normalized);
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // Extracts ArgDef[] from a tool's inputSchema (JSON Schema format).

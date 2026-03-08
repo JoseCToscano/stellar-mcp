@@ -26,9 +26,22 @@ import {
   isFormComplete,
   parseArgValue,
   extractArgs,
+  isReadOperation,
+  setPendingSign,
+  getPendingSign,
+  clearPendingSign,
 } from '../conversation.js';
-import { esc, formatForm, formatCallResult, formatError, formatConnectionError } from '../formatters.js';
-import { buildFormKeyboard, buildBooleanSubKeyboard, buildEnumSubKeyboard } from '../keyboards.js';
+import {
+  esc,
+  formatForm,
+  formatReadResult,
+  formatWriteConfirmation,
+  formatWriteNoSigner,
+  formatSubmitResult,
+  formatError,
+  formatConnectionError,
+} from '../formatters.js';
+import { buildFormKeyboard, buildBooleanSubKeyboard, buildEnumSubKeyboard, buildConfirmKeyboard } from '../keyboards.js';
 import { commandToTool } from '../commands.js';
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -288,8 +301,13 @@ export async function handleFormTextReply(ctx: Context): Promise<void> {
 }
 
 // ─── Tool execution ───────────────────────────────────────────────────────────
+//
+// Calls the tool and edits messageId with the result.
+//
+// Read operations (get-*, list-*, etc.): show simulationResult directly.
+// Write operations: show a preview + confirmation keyboard. The user must
+// confirm before signing and submitting.
 
-// Calls the tool and edits messageId in place with the result (or error).
 async function executeTool(
   ctx: Context,
   chatId: number,
@@ -301,17 +319,22 @@ async function executeTool(
   try {
     const result = await client.call(toolName as never, args as never);
 
-    if (result.xdr && canSign()) {
-      await ctx.api.editMessageText(chatId, messageId, '⏳ Signing and submitting transaction...');
-      const submit = await client.signAndSubmit(result.xdr, {
-        signer: secretKeySigner(process.env.SIGNER_SECRET!),
+    if (isReadOperation(toolName) || !result.xdr) {
+      // ── Read operation: show the result directly ──────────────────────
+      await ctx.api.editMessageText(chatId, messageId, formatReadResult(toolName, result), {
+        parse_mode: 'HTML',
       });
-      await ctx.api.editMessageText(chatId, messageId, formatCallResult(toolName, result, submit), {
+    } else if (!canSign()) {
+      // ── Write operation but no signer key ─────────────────────────────
+      await ctx.api.editMessageText(chatId, messageId, formatWriteNoSigner(toolName, result), {
         parse_mode: 'HTML',
       });
     } else {
-      await ctx.api.editMessageText(chatId, messageId, formatCallResult(toolName, result), {
+      // ── Write operation: show preview + confirmation keyboard ─────────
+      setPendingSign(chatId, messageId, toolName, result.xdr);
+      await ctx.api.editMessageText(chatId, messageId, formatWriteConfirmation(toolName, result), {
         parse_mode: 'HTML',
+        reply_markup: buildConfirmKeyboard(),
       });
     }
   } catch (err) {
@@ -324,4 +347,57 @@ async function executeTool(
   } finally {
     client.close();
   }
+}
+
+// ─── Confirm sign callback ──────────────────────────────────────────────────
+//
+// Handles confirm:sign and confirm:cancel from the write confirmation keyboard.
+
+export async function handleConfirmCallback(ctx: Context): Promise<void> {
+  const chatId = ctx.chat!.id;
+  const data = ctx.callbackQuery?.data ?? '';
+
+  if (data === 'confirm:cancel') {
+    await ctx.answerCallbackQuery();
+    clearPendingSign(chatId);
+    await ctx.editMessageText('✗ Transaction cancelled.');
+    return;
+  }
+
+  if (data === 'confirm:sign') {
+    const pending = getPendingSign(chatId);
+    if (!pending) {
+      await ctx.answerCallbackQuery({ text: 'Session expired. Please try again.', show_alert: true });
+      await ctx.editMessageText('Session expired. Send the command again to retry.');
+      return;
+    }
+
+    await ctx.answerCallbackQuery();
+    clearPendingSign(chatId);
+
+    const { messageId, toolName, xdr } = pending;
+
+    await ctx.api.editMessageText(chatId, messageId, '⏳ Signing and submitting…', {
+      parse_mode: 'HTML',
+    });
+
+    const client = createClient();
+    try {
+      const submit = await client.signAndSubmit(xdr, {
+        signer: secretKeySigner(process.env.SIGNER_SECRET!),
+      });
+      await ctx.api.editMessageText(chatId, messageId, formatSubmitResult(toolName, submit), {
+        parse_mode: 'HTML',
+      });
+    } catch (err) {
+      await ctx.api.editMessageText(chatId, messageId, formatError(toolName, err), {
+        parse_mode: 'HTML',
+      });
+    } finally {
+      client.close();
+    }
+    return;
+  }
+
+  await ctx.answerCallbackQuery();
 }

@@ -14,7 +14,7 @@ import { handleStart } from './handlers/start.js';
 import { handleTools } from './handlers/tools.js';
 import { handleCall, handleToolCallback } from './handlers/call.js';
 import { handleChat } from './handlers/chat.js';
-import { handleToolCommand, handleFormCallback, handleFormTextReply } from './handlers/tool-command.js';
+import { handleToolCommand, handleFormCallback, handleFormTextReply, handleConfirmCallback } from './handlers/tool-command.js';
 import { cancelForm, getForm } from './conversation.js';
 import { toolToCommand, commandToTool } from './commands.js';
 import { createClient } from './mcp.js';
@@ -75,6 +75,9 @@ bot.callbackQuery(/^tool:/, handleToolCallback);
 
 // Form card interactions: "form:set:*", "form:bool:*", "form:enum:*", "form:exec", "form:cancel", "form:view"
 bot.callbackQuery(/^form:/, handleFormCallback);
+
+// Write operation confirmation: "confirm:sign", "confirm:cancel"
+bot.callbackQuery(/^confirm:/, handleConfirmCallback);
 
 // Catch-all for unhandled callback queries
 bot.on('callback_query:data', async (ctx) => {

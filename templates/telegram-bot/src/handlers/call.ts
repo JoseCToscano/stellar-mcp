@@ -11,15 +11,17 @@
 import type { Context } from 'grammy';
 import { MCPToolError, MCPConnectionError, secretKeySigner } from '@stellar-mcp/client';
 import { createClient, canSign } from '../mcp.js';
-import { buildToolsKeyboard } from '../keyboards.js';
+import { buildToolsKeyboard, buildConfirmKeyboard } from '../keyboards.js';
 import {
   esc,
-  formatCallResult,
+  formatReadResult,
+  formatWriteConfirmation,
+  formatWriteNoSigner,
   formatError,
   formatConnectionError,
 } from '../formatters.js';
 import { handleToolCommand } from './tool-command.js';
-import { getForm, cancelForm } from '../conversation.js';
+import { getForm, cancelForm, isReadOperation, setPendingSign } from '../conversation.js';
 
 // ─── /call command ────────────────────────────────────────────────────────────
 
@@ -97,14 +99,13 @@ async function showToolPicker(ctx: Context): Promise<void> {
   }
 }
 
-// ─── Internal: execute a tool ─────────────────────────────────────────────────
+// ─── Internal: execute a tool (power-user JSON path) ─────────────────────────
 
 async function executeTool(
   ctx: Context,
   toolName: string,
   jsonArgs: string,
 ): Promise<void> {
-  // Parse JSON arguments
   let parsedArgs: Record<string, unknown> = {};
   try {
     const parsed: unknown = JSON.parse(jsonArgs);
@@ -125,51 +126,39 @@ async function executeTool(
     return;
   }
 
-  // Show immediate feedback — edited in place when done
-  const statusMsg = await ctx.reply(`⏳ Calling <b>${esc(toolName)}</b>...`, { parse_mode: 'HTML' });
+  const statusMsg = await ctx.reply(`⏳ Calling <b>${esc(toolName)}</b>…`, { parse_mode: 'HTML' });
+  const chatId = statusMsg.chat.id;
+  const messageId = statusMsg.message_id;
 
   const client = createClient();
   try {
     const result = await client.call(toolName as never, parsedArgs as never);
 
-    if (result.xdr && canSign()) {
-      await ctx.api.editMessageText(
-        statusMsg.chat.id,
-        statusMsg.message_id,
-        `⏳ Signing and submitting transaction...`,
-      );
-
-      const submit = await client.signAndSubmit(result.xdr, {
-        signer: secretKeySigner(process.env.SIGNER_SECRET!),
+    if (isReadOperation(toolName) || !result.xdr) {
+      // Read operation — show result directly
+      await ctx.api.editMessageText(chatId, messageId, formatReadResult(toolName, result), {
+        parse_mode: 'HTML',
       });
-
-      await ctx.api.editMessageText(
-        statusMsg.chat.id,
-        statusMsg.message_id,
-        formatCallResult(toolName, result, submit),
-        { parse_mode: 'HTML' },
-      );
+    } else if (!canSign()) {
+      // Write but no signer key
+      await ctx.api.editMessageText(chatId, messageId, formatWriteNoSigner(toolName, result), {
+        parse_mode: 'HTML',
+      });
     } else {
-      await ctx.api.editMessageText(
-        statusMsg.chat.id,
-        statusMsg.message_id,
-        formatCallResult(toolName, result),
-        { parse_mode: 'HTML' },
-      );
+      // Write operation — show confirmation
+      setPendingSign(chatId, messageId, toolName, result.xdr);
+      await ctx.api.editMessageText(chatId, messageId, formatWriteConfirmation(toolName, result), {
+        parse_mode: 'HTML',
+        reply_markup: buildConfirmKeyboard(),
+      });
     }
   } catch (err) {
     let text: string;
-    if (err instanceof MCPConnectionError) {
-      text = formatConnectionError(err);
-    } else if (err instanceof MCPToolError) {
-      text = formatError(err.toolName ?? toolName, err);
-    } else {
-      text = formatError(toolName, err);
-    }
+    if (err instanceof MCPConnectionError) text = formatConnectionError(err);
+    else if (err instanceof MCPToolError) text = formatError(err.toolName ?? toolName, err);
+    else text = formatError(toolName, err);
 
-    await ctx.api.editMessageText(statusMsg.chat.id, statusMsg.message_id, text, {
-      parse_mode: 'HTML',
-    });
+    await ctx.api.editMessageText(chatId, messageId, text, { parse_mode: 'HTML' });
   } finally {
     client.close();
   }

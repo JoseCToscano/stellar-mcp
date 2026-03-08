@@ -104,3 +104,18 @@ export function buildEnumSubKeyboard(fieldIndex: number, values: string[]): Inli
   kb.row().text('← Back', 'form:view');
   return kb;
 }
+
+// ─── Write confirmation keyboard ────────────────────────────────────────────
+//
+// Shown after a write operation returns a result preview.
+// The user must confirm before the bot signs and submits the transaction.
+//
+// Callback data:
+//   confirm:sign    — user approves signing + submission
+//   confirm:cancel  — user declines
+
+export function buildConfirmKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('✍️ Sign & Submit', 'confirm:sign')
+    .text('✗ Cancel', 'confirm:cancel');
+}

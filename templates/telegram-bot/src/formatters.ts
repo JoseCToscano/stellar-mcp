@@ -77,58 +77,99 @@ export function formatToolsList(tools: ToolInfo[]): string {
   ].join('\n'));
 }
 
-// ─── /call result ─────────────────────────────────────────────────────────────
+// ─── Read result ─────────────────────────────────────────────────────────────
+//
+// Shows the simulationResult (the actual contract return value) for read ops.
+// Both read and write Soroban calls return XDR, but for reads we only care
+// about the simulationResult — the XDR is never submitted.
 
-export function formatCallResult(
-  toolName: string,
-  result: CallResult,
-  submitResult?: SubmitResult,
-): string {
-  const networkPassphrase = process.env.NETWORK_PASSPHRASE ?? '';
-  const isMainnet = networkPassphrase.includes('Public Global');
-  const explorerBase = isMainnet
-    ? 'https://stellar.expert/explorer/public'
-    : 'https://stellar.expert/explorer/testnet';
-
-  if (submitResult) {
-    // Write operation that was signed and submitted
-    const ok = submitResult.status === 'SUCCESS';
-    const lines = [
-      ok ? '✅ <b>Transaction Submitted</b>' : '❌ <b>Transaction Failed</b>',
-      LINE,
-      '',
-      `<b>Hash</b>`,
-      `<code>${esc(submitResult.hash)}</code>`,
-      '',
-      `<b>Status:</b> ${esc(submitResult.status)}`,
-    ];
-    if (submitResult.hash) {
-      lines.push('');
-      lines.push(`🔗 <a href="${explorerBase}/tx/${submitResult.hash}">View on Stellar Expert</a>`);
-    }
-    return lines.join('\n');
-  }
-
-  if (result.xdr) {
-    // Write operation but no SIGNER_SECRET — return the unsigned XDR
-    return [
-      `📄 <b>${esc(toolName)}</b> — unsigned transaction`,
-      LINE,
-      '',
-      '<b>XDR:</b>',
-      `<code>${esc(result.xdr.slice(0, 200))}…</code>`,
-      '',
-      '💡 <i>Set SIGNER_SECRET to auto-sign transactions.</i>',
-    ].join('\n');
-  }
-
-  // Read-only result
+export function formatReadResult(toolName: string, result: CallResult): string {
   return [
     `👁 <b>${esc(toolName)}</b>`,
     LINE,
     '',
     formatResultData(result),
   ].join('\n');
+}
+
+// ─── Write confirmation ─────────────────────────────────────────────────────
+//
+// Shows a preview of the write operation result and waits for user confirmation
+// before signing. Shown with a "Sign & Submit" keyboard.
+
+export function formatWriteConfirmation(toolName: string, result: CallResult): string {
+  const lines = [
+    `✍️ <b>${esc(toolName)}</b>`,
+    LINE,
+    '',
+  ];
+
+  // Show simulation result as preview
+  const preview = result.simulationResult;
+  if (preview !== null && preview !== undefined) {
+    lines.push('<b>Preview:</b>');
+    const json = JSON.stringify(preview, null, 2);
+    const truncated = json.length > 400 ? json.slice(0, 400) + '…' : json;
+    lines.push(`<code>${esc(truncated)}</code>`);
+    lines.push('');
+  }
+
+  lines.push('<i>Sign and submit this transaction?</i>');
+
+  return lines.join('\n');
+}
+
+// ─── Write confirmation (no signer key) ─────────────────────────────────────
+
+export function formatWriteNoSigner(toolName: string, result: CallResult): string {
+  const lines = [
+    `📄 <b>${esc(toolName)}</b> — unsigned transaction`,
+    LINE,
+    '',
+  ];
+
+  // Show simulation result
+  const preview = result.simulationResult;
+  if (preview !== null && preview !== undefined) {
+    lines.push('<b>Preview:</b>');
+    const json = JSON.stringify(preview, null, 2);
+    const truncated = json.length > 400 ? json.slice(0, 400) + '…' : json;
+    lines.push(`<code>${esc(truncated)}</code>`);
+    lines.push('');
+  }
+
+  lines.push('<b>XDR:</b>');
+  lines.push(`<code>${esc((result.xdr ?? '').slice(0, 200))}…</code>`);
+  lines.push('');
+  lines.push('💡 <i>Set SIGNER_SECRET to enable signing.</i>');
+
+  return lines.join('\n');
+}
+
+// ─── Submitted result ────────────────────────────────────────────────────────
+
+export function formatSubmitResult(toolName: string, submitResult: SubmitResult): string {
+  const networkPassphrase = process.env.NETWORK_PASSPHRASE ?? '';
+  const isMainnet = networkPassphrase.includes('Public Global');
+  const explorerBase = isMainnet
+    ? 'https://stellar.expert/explorer/public'
+    : 'https://stellar.expert/explorer/testnet';
+
+  const ok = submitResult.status === 'SUCCESS';
+  const lines = [
+    ok ? '✅ <b>Transaction Submitted</b>' : '❌ <b>Transaction Failed</b>',
+    LINE,
+    '',
+    `<b>Hash</b>`,
+    `<code>${esc(submitResult.hash)}</code>`,
+    '',
+    `<b>Status:</b> ${esc(submitResult.status)}`,
+  ];
+  if (submitResult.hash) {
+    lines.push('');
+    lines.push(`🔗 <a href="${explorerBase}/tx/${submitResult.hash}">View on Stellar Expert</a>`);
+  }
+  return lines.join('\n');
 }
 
 export function formatError(toolName: string, err: unknown): string {

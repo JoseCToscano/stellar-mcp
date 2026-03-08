@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { secretKeySigner, type ToolInfo } from '@stellar-mcp/client';
 import type { ModelMessage, LanguageModel } from 'ai';
 import { createClient, canSign } from './mcp.js';
+import { isReadOperation } from './conversation.js';
 
 // ─── Model selection ──────────────────────────────────────────────────────────
 
@@ -73,7 +74,13 @@ function buildAITools(stellarTools: ToolInfo[]) {
             try {
               const result = await client.call(t.name as never, args as never);
 
-              if (result.xdr && canSign()) {
+              // Read operations: return the simulationResult directly
+              if (isReadOperation(t.name) || !result.xdr) {
+                return result.simulationResult ?? result.data ?? 'completed';
+              }
+
+              // Write operations: sign and submit if signer is configured
+              if (canSign()) {
                 const submit = await client.signAndSubmit(result.xdr, {
                   signer: secretKeySigner(process.env.SIGNER_SECRET!),
                 });
@@ -84,8 +91,11 @@ function buildAITools(stellarTools: ToolInfo[]) {
                 };
               }
 
-              // Return the actual contract result for the LLM to read
-              return result.simulationResult ?? result.data ?? 'completed';
+              // No signer key — return preview only
+              return {
+                preview: result.simulationResult ?? result.data,
+                note: 'This is a write operation but SIGNER_SECRET is not configured. The transaction was simulated but not submitted.',
+              };
             } finally {
               client.close();
             }
