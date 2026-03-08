@@ -312,10 +312,16 @@ function renderObject(obj: Record<string, unknown>): string {
   return lines.join('\n');
 }
 
-// Renders a value inline (for key-value pairs) — keeps it on one line
-function renderInlineValue(value: unknown): string {
+// Renders a value inline (for key-value pairs) — keeps it on one line.
+// compact: true truncates Stellar addresses to first 4 + last 4 (for list views).
+function renderInlineValue(value: unknown, compact = false): string {
   if (value === null || value === undefined) return '<i>null</i>';
-  if (typeof value === 'string') return renderString(value);
+  if (typeof value === 'string') {
+    if (compact && /^[GC][A-Z2-7]{55}$/.test(value)) {
+      return `<code>${value.slice(0, 4)}…${value.slice(-4)}</code>`;
+    }
+    return renderString(value);
+  }
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
 
   const tag = unwrapTag(value);
@@ -349,12 +355,11 @@ function renderArray(arr: unknown[]): string {
       lines.push(`<b>${i + 1}.</b>${label ? ` ${esc(label)}` : ''}`);
 
       for (const [key, val] of Object.entries(item)) {
-        // Truncate Stellar addresses in list context
-        const rendered = renderInlineValue(val);
-        lines.push(`   <b>${esc(key)}</b>  ${rendered}`);
+        lines.push(`   <b>${esc(key)}</b>  ${renderInlineValue(val, true)}`);
       }
 
-      if (i < items.length - 1) lines.push('');
+      // Thin separator between items for visual breathing room
+      if (i < items.length - 1) lines.push('┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈');
     });
 
     if (arr.length > MAX_ITEMS) {
