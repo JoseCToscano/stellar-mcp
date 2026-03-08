@@ -235,25 +235,154 @@ export function formatConnectionError(err: unknown): string {
   ].join('\n');
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Result data formatting ──────────────────────────────────────────────────
+//
+// Renders contract return values as clean Telegram messages. Handles:
+//   - null/undefined → "No data returned."
+//   - simple scalars → direct display
+//   - Stellar addresses → copyable <code> blocks
+//   - { tag: "Value" } → unwrapped to just "Value" (Soroban enum pattern)
+//   - arrays of objects → numbered cards with key-value pairs
+//   - objects → key-value pairs
+//
+// Dynamic: works with any contract shape, not hardcoded to specific schemas.
 
-// Renders the data portion of a read-only result.
-// Priority: simulationResult (actual contract return value), then data.
 function formatResultData(result: CallResult): string {
-  const value = result.simulationResult ?? result.data;
+  // simulationResult is the contract's actual return value.
+  // null means the contract returned void (e.g., no pending admin).
+  // Only fall back to data if simulationResult is truly absent (undefined).
+  const value = result.simulationResult !== undefined
+    ? result.simulationResult
+    : result.data;
 
   if (value === null || value === undefined) return '<i>No data returned.</i>';
 
-  if (Array.isArray(value)) {
-    const count = value.length;
-    const preview = JSON.stringify(value.slice(0, 3), null, 2);
-    const suffix = count > 3 ? `\n  ... (${count - 3} more)` : '';
-    return `<code>${esc(preview + suffix)}</code>`;
+  return renderValue(value);
+}
+
+// ─── Recursive value renderer ────────────────────────────────────────────────
+
+function renderValue(value: unknown): string {
+  if (value === null || value === undefined) return '<i>null</i>';
+
+  // Scalars
+  if (typeof value === 'string') return renderString(value);
+  if (typeof value === 'number') return `<b>${value}</b>`;
+  if (typeof value === 'boolean') return `<b>${value}</b>`;
+
+  // Soroban enum: { tag: "Pausable" } → "Pausable"
+  const tag = unwrapTag(value);
+  if (tag !== null) return esc(tag);
+
+  // Array
+  if (Array.isArray(value)) return renderArray(value);
+
+  // Object
+  if (typeof value === 'object') return renderObject(value as Record<string, unknown>);
+
+  return `<code>${esc(String(value))}</code>`;
+}
+
+function renderString(s: string): string {
+  // Stellar address (56 chars, starts with G or C) — show as copyable code
+  if (/^[GC][A-Z2-7]{55}$/.test(s)) {
+    return `<code>${esc(s)}</code>`;
+  }
+  // Long strings — wrap in code
+  if (s.length > 60) return `<code>${esc(s)}</code>`;
+  return esc(s);
+}
+
+// Unwrap Soroban enum pattern: { tag: "Value" } → "Value"
+function unwrapTag(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj);
+  if (keys.length === 1 && keys[0] === 'tag' && typeof obj.tag === 'string') {
+    return obj.tag;
+  }
+  return null;
+}
+
+function renderObject(obj: Record<string, unknown>): string {
+  const lines: string[] = [];
+  for (const [key, val] of Object.entries(obj)) {
+    lines.push(`<b>${esc(key)}</b>  ${renderInlineValue(val)}`);
+  }
+  return lines.join('\n');
+}
+
+// Renders a value inline (for key-value pairs) — keeps it on one line
+function renderInlineValue(value: unknown): string {
+  if (value === null || value === undefined) return '<i>null</i>';
+  if (typeof value === 'string') return renderString(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+
+  const tag = unwrapTag(value);
+  if (tag !== null) return esc(tag);
+
+  // Nested object/array: compact JSON
+  const json = JSON.stringify(value);
+  const display = json.length > 50 ? json.slice(0, 48) + '…' : json;
+  return `<code>${esc(display)}</code>`;
+}
+
+function renderArray(arr: unknown[]): string {
+  if (arr.length === 0) return '<i>Empty list.</i>';
+
+  const lines: string[] = [];
+  lines.push(`📋 <b>${arr.length} result${arr.length === 1 ? '' : 's'}</b>`);
+  lines.push('');
+
+  // Array of objects: numbered cards
+  const isObjectArray = arr.every(
+    (item) => typeof item === 'object' && item !== null && !Array.isArray(item),
+  );
+
+  if (isObjectArray) {
+    const MAX_ITEMS = 5;
+    const items = arr.slice(0, MAX_ITEMS) as Record<string, unknown>[];
+
+    items.forEach((item, i) => {
+      // Use a "name", "label", or "symbol" field as the card title
+      const label = findLabel(item);
+      lines.push(`<b>${i + 1}.</b>${label ? ` ${esc(label)}` : ''}`);
+
+      for (const [key, val] of Object.entries(item)) {
+        // Truncate Stellar addresses in list context
+        const rendered = renderInlineValue(val);
+        lines.push(`   <b>${esc(key)}</b>  ${rendered}`);
+      }
+
+      if (i < items.length - 1) lines.push('');
+    });
+
+    if (arr.length > MAX_ITEMS) {
+      lines.push('');
+      lines.push(`<i>… and ${arr.length - MAX_ITEMS} more</i>`);
+    }
+  } else {
+    // Array of primitives
+    const MAX_ITEMS = 10;
+    arr.slice(0, MAX_ITEMS).forEach((item) => {
+      lines.push(`• ${renderInlineValue(item)}`);
+    });
+    if (arr.length > MAX_ITEMS) {
+      lines.push(`<i>… and ${arr.length - MAX_ITEMS} more</i>`);
+    }
   }
 
-  const json = JSON.stringify(value, null, 2);
-  const truncated = json.length > 800 ? json.slice(0, 800) + '...' : json;
-  return `<code>${esc(truncated)}</code>`;
+  return lines.join('\n');
+}
+
+// Finds a human-readable label field in an object for card titles
+function findLabel(obj: Record<string, unknown>): string | null {
+  for (const key of ['name', 'label', 'title', 'symbol', 'id']) {
+    if (typeof obj[key] === 'string' && obj[key]) {
+      return obj[key] as string;
+    }
+  }
+  return null;
 }
 
 // Converts a JSON Schema inputSchema into human-readable bullet lines.
