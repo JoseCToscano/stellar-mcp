@@ -42,6 +42,7 @@ export interface FormState {
 
 // ─── Arg key ──────────────────────────────────────────────────────────────────
 // Unique key for each arg, derived from its path. Used as key in collectedArgs.
+// Assumes property names don't contain dots — holds for all Stellar MCP schemas.
 
 export function argKey(arg: ArgDef): string {
   return arg.path.join('.');
@@ -239,12 +240,13 @@ function extractUnionTags(prop: SchemaProp): string[] | null {
   const variants = prop.oneOf ?? prop.anyOf;
   if (!variants || variants.length === 0) return null;
 
+  // Only treat as a discriminated union if ALL variants have a tag.const.
+  // Partial matches could mean this is a different kind of union.
   const tags: string[] = [];
   for (const variant of variants) {
     const tagConst = variant.properties?.tag?.const;
-    if (typeof tagConst === 'string') {
-      tags.push(tagConst);
-    }
+    if (typeof tagConst !== 'string') return null;
+    tags.push(tagConst);
   }
   return tags.length > 0 ? tags : null;
 }
@@ -265,13 +267,18 @@ export function extractArgs(tool: ToolInfo): ArgDef[] {
   return flattenProperties(props, topRequired, [], undefined, true);
 }
 
+const MAX_DEPTH = 5;
+
 function flattenProperties(
   props: Record<string, SchemaProp>,
   required: string[],
   parentPath: string[],
   group: string | undefined,
   parentRequired: boolean,
+  depth: number = 0,
 ): ArgDef[] {
+  if (depth > MAX_DEPTH) return [];
+
   const reqArgs: ArgDef[] = [];
   const optArgs: ArgDef[] = [];
 
@@ -300,7 +307,7 @@ function flattenProperties(
     // Nested object with known properties → recursively expand
     if (type === 'object' && def.properties && Object.keys(def.properties).length > 0) {
       const nestedRequired = def.required ?? [];
-      const nested = flattenProperties(def.properties, nestedRequired, path, name, isRequired);
+      const nested = flattenProperties(def.properties, nestedRequired, path, name, isRequired, depth + 1);
       reqArgs.push(...nested.filter((a) => a.required));
       optArgs.push(...nested.filter((a) => !a.required));
       continue;
