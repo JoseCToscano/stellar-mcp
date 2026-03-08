@@ -26,6 +26,8 @@ import {
   isFormComplete,
   parseArgValue,
   extractArgs,
+  buildToolArgs,
+  argKey,
   isReadOperation,
   setPendingSign,
   getPendingSign,
@@ -166,14 +168,15 @@ export async function handleFormCallback(ctx: Context): Promise<void> {
 
     await ctx.answerCallbackQuery();
 
-    const { toolName, collectedArgs } = state;
+    const { toolName } = state;
+    const toolArgs = buildToolArgs(state);
     cancelForm(chatId);
 
     const messageId = ctx.callbackQuery!.message!.message_id;
-    await ctx.api.editMessageText(chatId, messageId, `⏳ Calling <b>${esc(toolName)}</b>...`, {
+    await ctx.api.editMessageText(chatId, messageId, `⏳ Calling <b>${esc(toolName)}</b>…`, {
       parse_mode: 'HTML',
     });
-    await executeTool(ctx, chatId, messageId, toolName, collectedArgs);
+    await executeTool(ctx, chatId, messageId, toolName, toolArgs);
     return;
   }
 
@@ -289,7 +292,7 @@ export async function handleFormTextReply(ctx: Context): Promise<void> {
   const arg = state.args[fieldIndex];
   if (!arg) return;
 
-  const value = parseArgValue(text, arg.type);
+  const value = parseArgValue(text, arg);
   const newState = setArg(chatId, fieldIndex, value);
   if (!newState) return;
 

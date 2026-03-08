@@ -10,6 +10,7 @@
 
 import type { ToolInfo, CallResult, SubmitResult } from '@stellar-mcp/client';
 import type { FormState } from './conversation.js';
+import { argKey } from './conversation.js';
 
 // ─── HTML escaping & limits ───────────────────────────────────────────────────
 
@@ -276,6 +277,7 @@ export function buildExampleJson(inputSchema: Record<string, unknown>): string {
 
 // Renders the form card — the single persistent message showing all parameters
 // and their current values. Edited in place as the user fills fields.
+// Nested object parameters are shown under group headers.
 export function formatForm(state: FormState): string {
   const lines: string[] = [
     `🔧 <b>${esc(state.toolName)}</b>`,
@@ -291,22 +293,38 @@ export function formatForm(state: FormState): string {
   const filledCount = Object.keys(state.collectedArgs).length;
   const requiredCount = state.args.filter((a) => a.required).length;
   const requiredFilled = state.args.filter(
-    (a) => a.required && Object.prototype.hasOwnProperty.call(state.collectedArgs, a.name),
+    (a) => a.required && Object.prototype.hasOwnProperty.call(state.collectedArgs, argKey(a)),
   ).length;
 
+  let currentGroup: string | undefined;
+
   state.args.forEach((arg) => {
-    const isSet = Object.prototype.hasOwnProperty.call(state.collectedArgs, arg.name);
+    // Insert group header when entering a new nested object section
+    if (arg.group !== currentGroup) {
+      currentGroup = arg.group;
+      if (currentGroup) {
+        lines.push(`┄ <b>${esc(currentGroup)}</b> ┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
+      }
+    }
+
+    const key = argKey(arg);
+    const isSet = Object.prototype.hasOwnProperty.call(state.collectedArgs, key);
     const icon = isSet ? '✅' : arg.required ? '⬜' : '○';
     const req = arg.required && !isSet ? ' *' : '';
+    const indent = arg.group ? '  ' : '';
 
     if (isSet) {
-      const val = state.collectedArgs[arg.name];
-      const str = typeof val === 'string' ? val : JSON.stringify(val);
-      const display = str.length > 36 ? str.slice(0, 34) + '…' : str;
-      lines.push(`${icon} <b>${esc(arg.name)}</b>${req}  <code>${esc(display)}</code>`);
+      const val = state.collectedArgs[key];
+      const str = val === null ? 'null' : typeof val === 'string' ? val : JSON.stringify(val);
+      const display = str.length > 32 ? str.slice(0, 30) + '…' : str;
+      lines.push(`${indent}${icon} <b>${esc(arg.name)}</b>${req}  <code>${esc(display)}</code>`);
     } else {
-      const typeHint = arg.type !== 'any' ? `<i>${esc(arg.type)}</i>` : '';
-      lines.push(`${icon} <b>${esc(arg.name)}</b>${req}  ${typeHint}`);
+      const typeHint = arg.type !== 'any' && arg.type !== 'enum'
+        ? `<i>${esc(arg.type)}</i>`
+        : arg.type === 'enum' && arg.enum
+          ? `<i>[${arg.enum.slice(0, 3).join('|')}${arg.enum.length > 3 ? '|…' : ''}]</i>`
+          : '';
+      lines.push(`${indent}${icon} <b>${esc(arg.name)}</b>${req}  ${typeHint}`);
     }
   });
 

@@ -13,6 +13,7 @@
 import { InlineKeyboard } from 'grammy';
 import type { ToolInfo } from '@stellar-mcp/client';
 import type { FormState } from './conversation.js';
+import { argKey } from './conversation.js';
 
 // ─── Tool picker (for /call command) ─────────────────────────────────────────
 
@@ -54,20 +55,31 @@ export function buildToolsKeyboard(tools: ToolInfo[]): InlineKeyboard {
 
 export function buildFormKeyboard(state: FormState): InlineKeyboard {
   const kb = new InlineKeyboard();
+  let col = 0;
+  let currentGroup: string | undefined;
 
   state.args.forEach((arg, index) => {
-    const isSet = Object.prototype.hasOwnProperty.call(state.collectedArgs, arg.name);
+    // Start a new row when entering a different group
+    if (arg.group !== currentGroup) {
+      if (col > 0) kb.row();
+      currentGroup = arg.group;
+      col = 0;
+    }
+
+    const isSet = Object.prototype.hasOwnProperty.call(state.collectedArgs, argKey(arg));
     const icon = isSet ? '✅' : arg.required ? '⬜' : '○';
     const suffix = arg.required && !isSet ? ' *' : '';
-    // Truncate long names so two fit on a row
     const name = arg.name.length > 16 ? arg.name.slice(0, 14) + '…' : arg.name;
     kb.text(`${icon} ${name}${suffix}`, `form:set:${index}`);
+    col++;
 
-    if (index % 2 === 1) kb.row();
+    if (col === 2) {
+      kb.row();
+      col = 0;
+    }
   });
 
-  // Ensure we start the action row on a fresh line
-  if (state.args.length % 2 !== 0) kb.row();
+  if (col > 0) kb.row();
 
   kb.text('▶ Execute', 'form:exec').text('✗ Cancel', 'form:cancel');
   return kb;
