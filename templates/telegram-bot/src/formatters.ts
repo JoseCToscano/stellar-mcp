@@ -77,27 +77,6 @@ export function formatToolsList(tools: ToolInfo[]): string {
   ].join('\n'));
 }
 
-// ─── Tool detail (inline keyboard callback response) ─────────────────────────
-
-export function formatToolDetail(tool: ToolInfo): string {
-  const argLines = buildArgPreview(tool.inputSchema);
-  const hasArgs = argLines.length > 0;
-
-  const exampleArgs = hasArgs ? ` ${buildExampleJson(tool.inputSchema)}` : '';
-  const exampleCall = `/call ${tool.name}${exampleArgs}`;
-
-  return [
-    `<b>${esc(tool.name)}</b>`,
-    esc(tool.description || 'No description available.'),
-    '',
-    hasArgs ? '<b>Arguments:</b>' : '<i>No arguments required.</i>',
-    ...argLines,
-    '',
-    'Call it with:',
-    `<code>${esc(exampleCall)}</code>`,
-  ].join('\n');
-}
-
 // ─── /call result ─────────────────────────────────────────────────────────────
 
 export function formatCallResult(

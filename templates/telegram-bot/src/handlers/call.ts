@@ -19,6 +19,7 @@ import {
   formatConnectionError,
 } from '../formatters.js';
 import { handleToolCommand } from './tool-command.js';
+import { getForm, cancelForm } from '../conversation.js';
 
 // ─── /call command ────────────────────────────────────────────────────────────
 
@@ -53,7 +54,8 @@ export async function handleToolCallback(ctx: Context): Promise<void> {
   await ctx.answerCallbackQuery();
 
   const toolName = (ctx.callbackQuery?.data ?? '').replace(/^tool:/, '');
-  const messageId = ctx.callbackQuery!.message!.message_id;
+  const messageId = ctx.callbackQuery?.message?.message_id;
+  if (!messageId) return;
 
   // Delegate to the form card handler, reusing the tool picker message
   await handleToolCommand(ctx, toolName, undefined, messageId);
@@ -62,6 +64,18 @@ export async function handleToolCallback(ctx: Context): Promise<void> {
 // ─── Internal: show tool picker ───────────────────────────────────────────────
 
 async function showToolPicker(ctx: Context): Promise<void> {
+  // Cancel any active form (user switched context to browsing tools)
+  const chatId = ctx.chat?.id;
+  if (chatId) {
+    const existing = getForm(chatId);
+    if (existing) {
+      try {
+        await ctx.api.editMessageText(chatId, existing.formMessageId, '✗ Cancelled.');
+      } catch { /* message may be gone */ }
+      cancelForm(chatId);
+    }
+  }
+
   const client = createClient();
   try {
     const tools = await client.listTools();
