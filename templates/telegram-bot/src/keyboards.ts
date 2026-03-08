@@ -41,15 +41,21 @@ export function buildToolsKeyboard(tools: ToolInfo[]): InlineKeyboard {
 
 // ─── Form card keyboard ───────────────────────────────────────────────────────
 //
-// Shows one button per argument. Button label reflects fill status:
-//   ✅ fieldName    — value has been set
-//   ⬜ fieldName *  — required, not yet set
-//   ○  fieldName    — optional, not yet set
+// Banana Gun / Maestro style: section divider buttons + field buttons.
 //
-// Two arg buttons per row. Execute + Cancel on the final row.
+// Button indicators:
+//   ✎ fieldName *  — not yet set (* = required)
+//   ✓ fieldName    — value has been set
+//   ○ fieldName    — optional, not yet set
+//
+// Section dividers (non-clickable, callback = form:noop):
+//   ─── config ───
+//
+// Two field buttons per row. Execute + Cancel on the final row.
 //
 // Callback data:
 //   form:set:<fieldIndex>  — user wants to set this field
+//   form:noop              — section divider (no-op)
 //   form:exec              — execute the tool
 //   form:cancel            — cancel the form
 
@@ -59,17 +65,20 @@ export function buildFormKeyboard(state: FormState): InlineKeyboard {
   let currentGroup: string | undefined;
 
   state.args.forEach((arg, index) => {
-    // Start a new row when entering a different group
+    // Section divider button for new groups (Banana Gun pattern)
     if (arg.group !== currentGroup) {
       if (col > 0) kb.row();
       currentGroup = arg.group;
       col = 0;
+      if (currentGroup) {
+        kb.text(`─── ${currentGroup} ───`, 'form:noop').row();
+      }
     }
 
     const isSet = Object.prototype.hasOwnProperty.call(state.collectedArgs, argKey(arg));
-    const icon = isSet ? '✅' : arg.required ? '⬜' : '○';
-    const suffix = arg.required && !isSet ? ' *' : '';
-    const name = arg.name.length > 16 ? arg.name.slice(0, 14) + '…' : arg.name;
+    const icon = isSet ? '✓' : arg.required ? '✎' : '○';
+    const suffix = !isSet && arg.required ? ' *' : '';
+    const name = arg.name.length > 14 ? arg.name.slice(0, 12) + '…' : arg.name;
     kb.text(`${icon} ${name}${suffix}`, `form:set:${index}`);
     col++;
 

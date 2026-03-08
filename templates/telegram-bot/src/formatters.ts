@@ -32,6 +32,37 @@ export function truncateMessage(text: string): string {
 
 const LINE = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
 
+// ─── Markdown → clean text ───────────────────────────────────────────────────
+//
+// MCP tool descriptions contain Rust-doc markdown:
+//   "Construct and simulate a deploy_token transaction.\n\n# Arguments\n\n* `deployer` - ..."
+//
+// The form card already shows every parameter as an interactive field, so the
+// # Arguments / # Returns / # Events sections are redundant. We extract the
+// first paragraph (the actual description) and lightly convert any remaining
+// markdown to Telegram HTML.
+
+// Returns HTML-safe text — already escaped, ready to embed in a message.
+export function cleanDescription(raw: string): string {
+  // Cut at the first markdown heading (# Arguments, # Returns, # Events, etc.)
+  const headingIdx = raw.search(/\n#\s/);
+  const text = headingIdx !== -1 ? raw.slice(0, headingIdx) : raw;
+
+  // Escape HTML entities first, then apply formatting
+  return esc(text)
+    // Strip leading "Construct and simulate a <fn> transaction. " boilerplate
+    .replace(/^Construct and simulate a \S+ transaction\.\s*/i, '')
+    // Convert `code` to <code>code</code> (backticks are safe after escaping)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Strip leftover markdown bullet markers (* or -)
+    .replace(/^\s*[*\-]\s+/gm, '• ')
+    // Strip markdown heading markers that didn't get caught above
+    .replace(/^#+\s*/gm, '')
+    // Collapse multiple blank lines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // ─── /start ───────────────────────────────────────────────────────────────────
 
 export function formatWelcome(serverUrl: string, aiEnabled: boolean): string {
@@ -59,12 +90,21 @@ export function formatToolsList(tools: ToolInfo[]): string {
     return 'No tools found on the connected MCP server.';
   }
 
+  // kebab-case → underscore for Telegram command format
+  const toCmd = (name: string) => name.replace(/-/g, '_').toLowerCase();
+
   const lines = tools.map((t) => {
     const hasArgs = Object.keys(
       (t.inputSchema.properties ?? {}) as Record<string, unknown>,
     ).length > 0;
     const icon = hasArgs ? '📝' : '👁';
-    return `${icon} <b>${esc(t.name)}</b>\n     <i>${esc(t.description || 'No description')}</i>`;
+    let desc = cleanDescription(t.description || 'No description');
+    // First sentence only for the compact list view
+    const sentenceEnd = desc.search(/\.\s/);
+    if (sentenceEnd !== -1) desc = desc.slice(0, sentenceEnd + 1);
+    if (desc.length > 80) desc = desc.slice(0, 78) + '…';
+    // Show as clickable /command — Telegram auto-links these
+    return `${icon} /${toCmd(t.name)}\n     <i>${desc || esc(t.name)}</i>`;
   });
 
   return truncateMessage([
@@ -74,7 +114,7 @@ export function formatToolsList(tools: ToolInfo[]): string {
     ...lines,
     '',
     `<i>👁 = read-only  ·  📝 = requires input</i>`,
-    '<i>Use /call to browse and execute</i>',
+    '<i>Tap any command to run it</i>',
   ].join('\n'));
 }
 
@@ -274,59 +314,41 @@ export function buildExampleJson(inputSchema: Record<string, unknown>): string {
 }
 
 // ─── Form card ────────────────────────────────────────────────────────────────
+//
+// Minimal message text + rich inline keyboard (Banana Gun pattern).
+// Message shows: header, description, filled values summary, progress.
+// Keyboard shows: all fields with ✎/✓ status + section divider buttons.
+// This avoids duplicating the field list in both text and keyboard.
 
-// Renders the form card — the single persistent message showing all parameters
-// and their current values. Edited in place as the user fills fields.
-// Nested object parameters are shown under group headers.
 export function formatForm(state: FormState): string {
   const lines: string[] = [
     `🔧 <b>${esc(state.toolName)}</b>`,
   ];
 
   if (state.toolDescription) {
-    lines.push(`<i>${esc(state.toolDescription)}</i>`);
+    const desc = cleanDescription(state.toolDescription);
+    if (desc) {
+      lines.push(`<i>${desc}</i>`);
+    }
   }
 
   lines.push(LINE);
-  lines.push('');
 
-  const filledCount = Object.keys(state.collectedArgs).length;
-  const requiredCount = state.args.filter((a) => a.required).length;
-  const requiredFilled = state.args.filter(
-    (a) => a.required && Object.prototype.hasOwnProperty.call(state.collectedArgs, argKey(a)),
-  ).length;
-
-  let currentGroup: string | undefined;
-
-  state.args.forEach((arg) => {
-    // Insert group header when entering a new nested object section
-    if (arg.group !== currentGroup) {
-      currentGroup = arg.group;
-      if (currentGroup) {
-        lines.push(`┄ <b>${esc(currentGroup)}</b> ┄┄┄┄┄┄┄┄┄┄┄┄┄┄`);
-      }
-    }
-
+  // Show filled values as a clean summary
+  const filledEntries: string[] = [];
+  for (const arg of state.args) {
     const key = argKey(arg);
-    const isSet = Object.prototype.hasOwnProperty.call(state.collectedArgs, key);
-    const icon = isSet ? '✅' : arg.required ? '⬜' : '○';
-    const req = arg.required && !isSet ? ' *' : '';
-    const indent = arg.group ? '  ' : '';
+    if (!Object.prototype.hasOwnProperty.call(state.collectedArgs, key)) continue;
+    const val = state.collectedArgs[key];
+    const str = val === null ? 'null' : typeof val === 'string' ? val : JSON.stringify(val);
+    const display = str.length > 40 ? str.slice(0, 38) + '…' : str;
+    filledEntries.push(`<b>${esc(arg.name)}</b>  <code>${esc(display)}</code>`);
+  }
 
-    if (isSet) {
-      const val = state.collectedArgs[key];
-      const str = val === null ? 'null' : typeof val === 'string' ? val : JSON.stringify(val);
-      const display = str.length > 32 ? str.slice(0, 30) + '…' : str;
-      lines.push(`${indent}${icon} <b>${esc(arg.name)}</b>${req}  <code>${esc(display)}</code>`);
-    } else {
-      const typeHint = arg.type !== 'any' && arg.type !== 'enum'
-        ? `<i>${esc(arg.type)}</i>`
-        : arg.type === 'enum' && arg.enum
-          ? `<i>[${arg.enum.slice(0, 3).join('|')}${arg.enum.length > 3 ? '|…' : ''}]</i>`
-          : '';
-      lines.push(`${indent}${icon} <b>${esc(arg.name)}</b>${req}  ${typeHint}`);
-    }
-  });
+  if (filledEntries.length > 0) {
+    lines.push('');
+    lines.push(...filledEntries);
+  }
 
   lines.push('');
 
@@ -336,10 +358,16 @@ export function formatForm(state: FormState): string {
       lines.push(`⌨️ <i>Type a value for <b>${esc(arg.name)}</b> and send it.</i>`);
     }
   } else {
+    const requiredCount = state.args.filter((a) => a.required).length;
+    const requiredFilled = state.args.filter(
+      (a) => a.required && Object.prototype.hasOwnProperty.call(state.collectedArgs, argKey(a)),
+    ).length;
+    const filledCount = Object.keys(state.collectedArgs).length;
+
     const progress = requiredCount > 0
       ? `${requiredFilled}/${requiredCount} required`
       : `${filledCount}/${state.args.length}`;
-    lines.push(`<i>${progress}  ·  tap a field to set it</i>`);
+    lines.push(`<i>Tap a field to fill it  ·  ${progress}</i>`);
   }
 
   return lines.join('\n');

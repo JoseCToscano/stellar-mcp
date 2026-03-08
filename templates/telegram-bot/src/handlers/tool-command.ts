@@ -179,6 +179,13 @@ export async function handleFormCallback(ctx: Context): Promise<void> {
     return;
   }
 
+  // ── Section divider (no-op) ───────────────────────────────────────────────
+  // Non-clickable section divider buttons in the keyboard
+  if (data === 'form:noop') {
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
   // All other callbacks can be answered immediately
   await ctx.answerCallbackQuery();
 

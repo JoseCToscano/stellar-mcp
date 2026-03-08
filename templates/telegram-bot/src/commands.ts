@@ -10,6 +10,16 @@
 
 import type { Bot } from 'grammy';
 import type { ToolInfo } from '@stellar-mcp/client';
+import { cleanDescription } from './formatters.js';
+
+// Strip HTML tags and entities for plain-text contexts (setMyCommands)
+function stripHtml(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
 
 // ─── Name conversion ──────────────────────────────────────────────────────────
 
@@ -43,7 +53,7 @@ export async function registerBotCommands(
   // Description is capped at 256 chars (Telegram limit)
   const toolCommands = tools.map((tool) => ({
     command: toolToCommand(tool.name),
-    description: tool.description.slice(0, 256) || tool.name,
+    description: stripHtml(cleanDescription(tool.description)).slice(0, 256) || tool.name,
   }));
 
   const allCommands = [...staticCommands, ...toolCommands];
