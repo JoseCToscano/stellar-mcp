@@ -9,7 +9,7 @@
 //   tool:<name>           → same as (2), reusing the picker message
 
 import type { Context } from 'grammy';
-import { MCPToolError, MCPConnectionError, secretKeySigner } from '@stellar-mcp/client';
+import { MCPToolError, MCPConnectionError } from '@stellar-mcp/client';
 import { createClient, canSign } from '../mcp.js';
 import { buildToolsKeyboard, buildConfirmKeyboard } from '../keyboards.js';
 import {

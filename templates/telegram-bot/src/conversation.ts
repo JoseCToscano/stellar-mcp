@@ -143,14 +143,16 @@ export function clearPendingSign(chatId: number): void {
 //
 // Soroban simulates ALL contract calls, so both read and write tools return XDR.
 // We use the tool name to determine intent: read-only tools start with
-// well-known prefixes (get-, list-, query-, etc.).
+// well-known prefixes followed by a separator (get-admin, list_tokens, etc.).
+//
+// The regex tests the original name (not normalized) and requires a separator
+// or end-of-string after the prefix. This prevents false positives like
+// "issue-tokens" matching "is" or "isolate-account" matching "is".
 
-const READ_PREFIXES = /^(get|list|query|fetch|find|search|is|has|check|count|show|view|read)/i;
+const READ_PREFIX = /^(get|list|query|fetch|find|search|is|has|check|count|show|view|read)[-_]|^(get|list|query|fetch|find|search|is|has|check|count|show|view|read)$/i;
 
 export function isReadOperation(toolName: string): boolean {
-  // Normalize: "get-admin" → "getadmin", "get_admin" → "getadmin"
-  const normalized = toolName.replace(/[-_]/g, '');
-  return READ_PREFIXES.test(normalized);
+  return READ_PREFIX.test(toolName);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

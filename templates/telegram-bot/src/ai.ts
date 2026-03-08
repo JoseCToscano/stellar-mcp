@@ -4,8 +4,13 @@
 // then runs an agentic loop via generateText().
 //
 // The LLM has full access to the connected MCP server's contract tools.
-// When a tool call produces XDR (a write operation), signing and submission
-// happen automatically inside the tool's execute callback.
+//
+// Read operations: simulationResult is returned directly to the LLM.
+// Write operations: signed and submitted automatically when SIGNER_SECRET is set.
+//   Unlike command mode (which shows a confirmation button), AI mode auto-signs
+//   because the user explicitly opted into AI by enabling it AND by asking the
+//   LLM to perform an action in natural language. The agentic loop would break
+//   if it had to pause mid-execution for interactive confirmation.
 //
 // Provider selection (first match wins):
 //   ANTHROPIC_API_KEY → claude-haiku-4-5-20251001

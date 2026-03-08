@@ -84,12 +84,12 @@ export function formatToolsList(tools: ToolInfo[]): string {
 // about the simulationResult — the XDR is never submitted.
 
 export function formatReadResult(toolName: string, result: CallResult): string {
-  return [
+  return truncateMessage([
     `👁 <b>${esc(toolName)}</b>`,
     LINE,
     '',
     formatResultData(result),
-  ].join('\n');
+  ].join('\n'));
 }
 
 // ─── Write confirmation ─────────────────────────────────────────────────────
