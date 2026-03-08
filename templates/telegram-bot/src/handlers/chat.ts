@@ -17,12 +17,12 @@ export async function handleChat(ctx: Context): Promise<void> {
   const statusMsg = await ctx.reply('💭 Thinking...');
 
   try {
-    const history = getHistory(chatId);
+    const history = await getHistory(chatId);
     const reply = await chat(text, history);
 
     // Update history after successful response
-    appendHistory(chatId, 'user', text);
-    appendHistory(chatId, 'assistant', reply);
+    await appendHistory(chatId, 'user', text);
+    await appendHistory(chatId, 'assistant', reply);
 
     await ctx.api.editMessageText(statusMsg.chat.id, statusMsg.message_id, truncateMessage(reply));
   } catch (err) {

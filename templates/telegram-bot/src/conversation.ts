@@ -6,8 +6,9 @@
 // Users click buttons to set each field (or type for free-text inputs), and the
 // same message is edited in place as values are filled in.
 //
-// State is stored in memory (resets on server restart).
-// For production persistence: swap Map for Vercel KV keyed on chatId.
+// State is stored in memory — intentionally ephemeral. Form interactions are
+// short-lived (seconds), so persistence across cold starts is not needed.
+// (Chat history uses Vercel KV for persistence — see history.ts.)
 
 import type { ToolInfo } from '@stellar-mcp/client';
 
