@@ -67,7 +67,7 @@ function buildAITools(stellarTools: ToolInfo[]) {
       //   - Has properties → z.record(z.unknown()) (any key-value pairs)
       // The LLM reads the description to know what keys and values to provide.
       const hasArgs = Object.keys(props).length > 0;
-      const inputSchema = hasArgs ? z.record(z.unknown()) : z.object({});
+      const inputSchema = hasArgs ? z.object({}).passthrough() : z.object({});
 
       return [
         t.name,
