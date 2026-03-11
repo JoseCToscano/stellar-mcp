@@ -1,0 +1,145 @@
+'use client';
+
+// src/hooks/useTransaction.ts
+//
+// State machine for the full PasskeyKit sign + submit flow.
+// States: idle → simulating → previewing → signing → submitting → success | error
+
+import { useState, useCallback } from 'react';
+import { account, server } from '@/lib/passkey';
+import { createClient } from '@/lib/mcp';
+
+export type TxPhase =
+  | 'idle'
+  | 'simulating'
+  | 'previewing'
+  | 'signing'
+  | 'submitting'
+  | 'success'
+  | 'error';
+
+export interface TransactionState {
+  phase: TxPhase;
+  pendingXdr: string | null;
+  pendingToolName: string | null;
+  pendingArgs: Record<string, unknown> | null;
+  readResult: unknown | null;
+  txHash: string | null;
+  error: string | null;
+
+  // Actions
+  execute: (toolName: string, args: Record<string, unknown>, contractId: string) => Promise<void>;
+  confirm: (keyId: string) => Promise<void>;
+  cancel: () => void;
+  reset: () => void;
+}
+
+export function useTransaction(): TransactionState {
+  const [phase, setPhase] = useState<TxPhase>('idle');
+  const [pendingXdr, setPendingXdr] = useState<string | null>(null);
+  const [pendingToolName, setPendingToolName] = useState<string | null>(null);
+  const [pendingArgs, setPendingArgs] = useState<Record<string, unknown> | null>(null);
+  const [readResult, setReadResult] = useState<unknown | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reset = useCallback(() => {
+    setPhase('idle');
+    setPendingXdr(null);
+    setPendingToolName(null);
+    setPendingArgs(null);
+    setReadResult(null);
+    setTxHash(null);
+    setError(null);
+  }, []);
+
+  const cancel = useCallback(() => {
+    setPhase('idle');
+    setPendingXdr(null);
+    setPendingToolName(null);
+    setPendingArgs(null);
+  }, []);
+
+  // Step 1: call the tool via MCP → get XDR or read result
+  const execute = useCallback(
+    async (toolName: string, args: Record<string, unknown>, contractId: string) => {
+      reset();
+      setPhase('simulating');
+
+      const client = createClient();
+      try {
+        // Inject contractId as source account for write tools
+        const callArgs = { ...args };
+
+        const result = await client.call(toolName, callArgs);
+
+        if (!result.xdr) {
+          // Read operation — display result directly
+          setReadResult(result.data);
+          setPhase('success');
+          return;
+        }
+
+        // Write operation — show preview modal
+        setPendingXdr(result.xdr);
+        setPendingToolName(toolName);
+        setPendingArgs(args);
+        setPhase('previewing');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Tool call failed';
+        setError(msg);
+        setPhase('error');
+      } finally {
+        client.close();
+      }
+    },
+    [reset],
+  );
+
+  // Step 2: user confirms → WebAuthn sign → Launchtube submit
+  const confirm = useCallback(
+    async (keyId: string) => {
+      if (!pendingXdr) return;
+
+      setPhase('signing');
+      try {
+        // account.sign accepts XDR string directly (avoids stellar-sdk type mismatch)
+        const signed = await account.sign(pendingXdr, { keyId });
+
+        setPhase('submitting');
+        const result = await server.send(signed);
+
+        // Launchtube returns { hash } or { id }
+        const hash =
+          (result as Record<string, string> | null)?.hash ??
+          (result as Record<string, string> | null)?.id ??
+          '';
+
+        setTxHash(hash);
+        setPendingXdr(null);
+        setPendingToolName(null);
+        setPendingArgs(null);
+        setPhase('success');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Transaction failed';
+        setError(msg);
+        setPhase('error');
+      }
+    },
+    [pendingXdr],
+  );
+
+  return {
+    phase,
+    pendingXdr,
+    pendingToolName,
+    pendingArgs,
+    readResult,
+    txHash,
+    error,
+    execute,
+    confirm,
+    cancel,
+    reset,
+  };
+}
