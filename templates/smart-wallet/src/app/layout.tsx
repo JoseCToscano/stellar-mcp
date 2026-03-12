@@ -1,8 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
-
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
   title: 'Stellar MCP Smart Wallet',
@@ -12,7 +9,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className="font-sans antialiased">
         <ThemeScript />
         {children}
       </body>
@@ -20,8 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   );
 }
 
-// Inline script injected before hydration to avoid FOUC (flash of unstyled content)
-// Reads localStorage 'sw:theme' and applies 'dark' class immediately.
+// Inline script injected before hydration to avoid FOUC on dark mode.
 function ThemeScript() {
   const script = `
     (function() {
