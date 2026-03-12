@@ -1,6 +1,5 @@
-import type { NextConfig } from 'next';
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   webpack: (config) => {
     // passkey-kit uses Node.js crypto internals — tell webpack to ignore them
     config.resolve.fallback = {
