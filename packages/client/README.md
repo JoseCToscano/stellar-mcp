@@ -195,6 +195,82 @@ npx mcp-generate-types --url http://localhost:3001/mcp --out ./src/mcp-types.ts
 
 ---
 
+## Schema Utilities
+
+Helper functions for building UIs on top of MCP tool definitions. These work on the JSON Schema from `ToolInfo.inputSchema` and are presentation-layer agnostic — equally useful for Telegram bots, React forms, CLIs, or any custom interface.
+
+```ts
+import {
+  extractArgs,
+  buildToolArgs,
+  parseArgValue,
+  isReadOperation,
+  argKey,
+  type ArgDef,
+} from '@stellar-mcp/client';
+```
+
+### `extractArgs(tool)`
+
+Flattens a tool's `inputSchema` into a sorted, display-ready `ArgDef[]`. Handles nested objects (recursively expanded with path tracking), discriminated unions (`oneOf`/`anyOf` with `{ tag: "Value" }` pattern → enum fields), nullable types, and enum fields. Required args come before optional at every level.
+
+```ts
+const args = extractArgs(tool);
+// [{ name: 'deployer', path: ['deployer'], type: 'string', required: true }, ...]
+```
+
+### `buildToolArgs(args, collected)`
+
+Reconstructs the nested args object from a flat key→value map, ready to pass to `client.call()`. Automatically wraps discriminated union values as `{ tag: value }`.
+
+```ts
+const toolArgs = buildToolArgs(args, {
+  deployer: 'GABC...',
+  'config.admin': 'GDEF...',
+  'config.decimals': 7,
+});
+// { deployer: 'GABC...', config: { admin: 'GDEF...', decimals: 7 } }
+```
+
+### `parseArgValue(value, arg)`
+
+Coerces a user-typed string into the correct JS type for the given `ArgDef`.
+
+```ts
+parseArgValue('42', { type: 'number', ... })   // → 42
+parseArgValue('true', { type: 'boolean', ... }) // → true
+parseArgValue('{"a":1}', { type: 'object', ... }) // → { a: 1 }
+parseArgValue('', { type: 'string', nullable: true, ... }) // → null
+```
+
+### `isReadOperation(toolName)`
+
+Heuristic that returns `true` for tool names starting with read-only prefixes (`get`, `list`, `query`, `fetch`, `find`, `search`, `is`, `has`, `check`, `count`, `show`, `view`, `read`).
+
+```ts
+isReadOperation('get-admin')    // true
+isReadOperation('list_tokens')  // true
+isReadOperation('deploy-token') // false
+```
+
+### `ArgDef`
+
+```ts
+interface ArgDef {
+  name: string;
+  path: string[];      // e.g. ['config', 'admin'] for nested fields
+  type: string;        // 'string' | 'number' | 'boolean' | 'object' | 'array' | 'enum' | 'any'
+  description: string;
+  required: boolean;
+  enum?: string[];     // present for enum / discriminated union fields
+  group?: string;      // section header for nested object groups
+  nullable?: boolean;
+  unionTag?: boolean;  // if true, value must be wrapped as { tag: value }
+}
+```
+
+---
+
 ## API Reference
 
 ### `new MCPClient(options)`
