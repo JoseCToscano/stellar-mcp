@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, ArrowRight, Eye, PenLine, ChevronLeft } from 'lucide-react';
 import type { ToolInfo } from '@stellar-mcp/client';
-import { isReadOperation } from '@/lib/schema';
+import { isReadOperation, extractArgs } from '@/lib/schema';
 import { ToolForm } from './ToolForm';
 import { ReadResultCard } from './ReadResultCard';
 import { Button } from './ui/Button';
@@ -139,7 +139,14 @@ export function ToolBrowser({
                   <Card
                     key={tool.name}
                     className="cursor-pointer transition-all hover:border-foreground"
-                    onClick={() => setSelectedTool(tool)}
+                    onClick={() => {
+                      // Read tools with no params: fire immediately, no intermediate form
+                      if (isReadOperation(tool.name) && extractArgs(tool).length === 0) {
+                        onExecute(tool.name, {});
+                      } else {
+                        setSelectedTool(tool);
+                      }
+                    }}
                   >
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="text-muted-foreground shrink-0">

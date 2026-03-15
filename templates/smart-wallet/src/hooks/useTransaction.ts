@@ -8,6 +8,7 @@
 import { useState, useCallback } from 'react';
 import { getAccount, getServer } from '@/lib/passkey';
 import { createClient } from '@/lib/mcp';
+import { isReadOperation } from '@/lib/schema';
 
 export type TxPhase =
   | 'idle'
@@ -73,9 +74,9 @@ export function useTransaction(): TransactionState {
 
         const result = await client.call(toolName, callArgs);
 
-        if (!result.xdr) {
-          // Read operation — display result directly
-          setReadResult(result.data);
+        if (isReadOperation(toolName) || !result.xdr) {
+          // Read operation — display result directly, no signing
+          setReadResult(result.simulationResult ?? result.data);
           setPhase('success');
           return;
         }
