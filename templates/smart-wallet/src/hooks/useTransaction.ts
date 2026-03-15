@@ -6,7 +6,7 @@
 // States: idle → simulating → previewing → signing → submitting → success | error
 
 import { useState, useCallback } from 'react';
-import { account, server } from '@/lib/passkey';
+import { getAccount, getServer } from '@/lib/passkey';
 import { createClient } from '@/lib/mcp';
 
 export type TxPhase =
@@ -104,10 +104,10 @@ export function useTransaction(): TransactionState {
       setPhase('signing');
       try {
         // account.sign accepts XDR string directly (avoids stellar-sdk type mismatch)
-        const signed = await account.sign(pendingXdr, { keyId });
+        const signed = await getAccount().sign(pendingXdr, { keyId });
 
         setPhase('submitting');
-        const result = await server.send(signed);
+        const result = await getServer().send(signed);
 
         // Launchtube returns { hash } or { id }
         const hash =

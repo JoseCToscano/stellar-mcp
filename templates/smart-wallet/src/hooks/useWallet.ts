@@ -6,7 +6,7 @@
 // Persisted in localStorage under 'sw:keyId' and 'sw:contractId'.
 
 import { useState, useCallback, useEffect } from 'react';
-import { account } from '@/lib/passkey';
+import { getAccount } from '@/lib/passkey';
 
 const KEY_ID_KEY = 'sw:keyId';
 const CONTRACT_ID_KEY = 'sw:contractId';
@@ -47,7 +47,7 @@ export function useWallet(): WalletState {
       setIsConnecting(true);
       setError(null);
       try {
-        const result = await account.createWallet('Stellar MCP', username);
+        const result = await getAccount().createWallet('Stellar MCP', username);
         persist(result.keyIdBase64, result.contractId);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to create wallet';
@@ -64,7 +64,7 @@ export function useWallet(): WalletState {
     setIsConnecting(true);
     setError(null);
     try {
-      const result = await account.connectWallet({});
+      const result = await getAccount().connectWallet({});
       persist(result.keyIdBase64, result.contractId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to connect wallet';
