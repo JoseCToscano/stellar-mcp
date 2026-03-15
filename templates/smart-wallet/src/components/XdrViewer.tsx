@@ -1,10 +1,7 @@
 'use client';
 
-// src/components/XdrViewer.tsx
-//
-// Collapsible XDR display with copy-to-clipboard button.
-
 import { useState, useCallback } from 'react';
+import { ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
 
 interface XdrViewerProps {
   xdr: string;
@@ -21,25 +18,25 @@ export function XdrViewer({ xdr }: XdrViewerProps) {
   }, [xdr]);
 
   return (
-    <div className="rounded-lg border border-[hsl(var(--border))] overflow-hidden text-sm font-mono">
+    <div className="rounded-md border overflow-hidden text-sm font-mono">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-[hsl(var(--muted))] hover:bg-[hsl(var(--accent))] transition-colors text-[hsl(var(--muted-foreground))]"
+        className="w-full flex items-center justify-between px-3 py-2 bg-secondary hover:bg-accent transition-colors text-muted-foreground"
       >
-        <span className="font-semibold text-xs tracking-wide uppercase">XDR Transaction</span>
-        <span className="text-xs">{open ? '▲ Hide' : '▼ Show'}</span>
+        <span className="font-medium text-xs uppercase tracking-wider">XDR</span>
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
       </button>
 
       {open && (
         <div className="relative">
-          <pre className="p-3 text-xs overflow-x-auto whitespace-pre-wrap break-all bg-[hsl(var(--card))] text-[hsl(var(--foreground))] max-h-40">
+          <pre className="p-3 text-xs overflow-x-auto whitespace-pre-wrap break-all bg-card max-h-40">
             {xdr}
           </pre>
           <button
             onClick={copy}
-            className="absolute top-2 right-2 px-2 py-1 text-xs rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 transition-opacity"
+            className="absolute top-2 right-2 p-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
           >
-            {copied ? 'Copied!' : 'Copy'}
+            {copied ? <Check size={12} /> : <Copy size={12} />}
           </button>
         </div>
       )}

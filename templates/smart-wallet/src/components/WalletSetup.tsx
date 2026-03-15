@@ -1,12 +1,12 @@
 'use client';
 
-// src/components/WalletSetup.tsx
-//
-// Full-screen wallet setup: Create new passkey wallet OR connect existing.
-
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { PlusCircle, LogIn, Loader2 } from 'lucide-react';
 import type { WalletState } from '@/hooks/useWallet';
+import { Button } from './ui/Button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/Card';
+import { Input } from './ui/Input';
 
 interface WalletSetupProps {
   wallet: WalletState;
@@ -38,135 +38,135 @@ export function WalletSetup({ wallet }: WalletSetupProps) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[hsl(var(--background))] px-4">
-      {/* Logo / brand */}
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4">
       <motion.div
-        initial={{ opacity: 0, y: -20 }}
+        initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         className="mb-10 text-center"
       >
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-stellar-blue to-stellar-purple mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold shadow-lg">
-          S
-        </div>
-        <h1 className="text-2xl font-bold">Stellar MCP Wallet</h1>
-        <p className="text-sm text-[hsl(var(--muted-foreground))] mt-1">
-          Passkey-powered smart wallet — no seed phrases, no extensions
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Stellar Smart Wallet</h1>
+        <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto">
+          Passkey-powered smart accounts for the Stellar network.
         </p>
       </motion.div>
 
       <AnimatePresence mode="wait">
-        {/* Connecting spinner */}
         {step === 'connecting' && (
           <motion.div
             key="connecting"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="text-center space-y-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="text-center space-y-4 flex flex-col items-center"
           >
-            <div className="w-12 h-12 border-4 border-[hsl(var(--primary))] border-t-transparent rounded-full animate-spin mx-auto" />
-            <p className="text-[hsl(var(--muted-foreground))]">
-              {wallet.isConnecting ? 'Setting up your wallet…' : 'Awaiting passkey…'}
-            </p>
-          </motion.div>
-        )}
-
-        {/* Create wallet form */}
-        {step === 'create' && (
-          <motion.div
-            key="create"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="w-full max-w-sm space-y-4"
-          >
-            <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 space-y-4">
-              <h2 className="font-semibold text-lg">Create New Wallet</h2>
-              <p className="text-sm text-[hsl(var(--muted-foreground))]">
-                Choose a username for your passkey. Your browser will prompt you to register a
-                biometric credential.
+            <Loader2 size={32} className="animate-spin text-muted-foreground" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium">
+                {wallet.isConnecting ? 'Setting up your wallet…' : 'Awaiting authentication…'}
               </p>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-                placeholder="e.g. alice"
-                className="w-full px-3 py-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-                autoFocus
-              />
-              {wallet.error && (
-                <p className="text-xs text-[hsl(var(--destructive))]">{wallet.error}</p>
-              )}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setStep('choose')}
-                  className="flex-1 px-4 py-2 text-sm rounded-lg border border-[hsl(var(--border))] hover:bg-[hsl(var(--accent))] transition-colors"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleCreate}
-                  disabled={!username.trim()}
-                  className="flex-1 px-4 py-2 text-sm font-medium rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                >
-                  Create
-                </button>
-              </div>
+              <p className="text-xs text-muted-foreground">
+                Follow the prompts in your browser
+              </p>
             </div>
           </motion.div>
         )}
 
-        {/* Choose mode */}
+        {step === 'create' && (
+          <motion.div
+            key="create"
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -10 }}
+            className="w-full max-w-sm"
+          >
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Create New Wallet</CardTitle>
+                <CardDescription>
+                  Choose a username for your passkey credential.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label htmlFor="username" className="text-sm font-medium">Username</label>
+                  <Input
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                    placeholder="e.g. alice"
+                    autoFocus
+                  />
+                </div>
+
+                {wallet.error && (
+                  <p className="text-sm text-destructive">{wallet.error}</p>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <Button variant="outline" onClick={() => setStep('choose')} className="flex-1">
+                    Back
+                  </Button>
+                  <Button
+                    onClick={handleCreate}
+                    disabled={!username.trim() || wallet.isConnecting}
+                    className="flex-1 gap-2"
+                  >
+                    {wallet.isConnecting && <Loader2 size={16} className="animate-spin" />}
+                    Create
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
         {step === 'choose' && (
           <motion.div
             key="choose"
-            initial={{ opacity: 0, scale: 0.97 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.97 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             className="w-full max-w-sm space-y-3"
           >
             {wallet.error && (
-              <div className="rounded-lg border border-[hsl(var(--destructive))]/30 bg-[hsl(var(--destructive))]/10 px-4 py-3 text-sm text-[hsl(var(--destructive))]">
-                {wallet.error}
-              </div>
+              <p className="text-sm text-destructive text-center">{wallet.error}</p>
             )}
 
-            {/* Create card */}
-            <button
+            <Card
+              className="cursor-pointer transition-all hover:border-foreground"
               onClick={() => setStep('create')}
-              className="w-full rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 text-left hover:border-[hsl(var(--primary))]/60 hover:bg-[hsl(var(--accent))] transition-all group"
             >
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[hsl(var(--primary))]/10 flex items-center justify-center text-xl shrink-0 group-hover:bg-[hsl(var(--primary))]/20 transition-colors">
-                  ✦
-                </div>
+              <CardContent className="p-5 flex items-center gap-4">
+                <PlusCircle size={20} className="text-muted-foreground shrink-0" />
                 <div>
-                  <h2 className="font-semibold">Create New Wallet</h2>
-                  <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
-                    Register a new passkey and deploy a smart wallet contract on Stellar
+                  <h2 className="font-medium text-sm">Create New Wallet</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Deploy a smart account using your device biometrics.
                   </p>
                 </div>
-              </div>
-            </button>
+              </CardContent>
+            </Card>
 
-            {/* Connect card */}
-            <button
+            <Card
+              className="cursor-pointer transition-all hover:border-foreground"
               onClick={handleConnect}
-              className="w-full rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 text-left hover:border-[hsl(var(--primary))]/60 hover:bg-[hsl(var(--accent))] transition-all group"
             >
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-xl bg-[hsl(var(--primary))]/10 flex items-center justify-center text-xl shrink-0 group-hover:bg-[hsl(var(--primary))]/20 transition-colors">
-                  ⚙
-                </div>
+              <CardContent className="p-5 flex items-center gap-4">
+                <LogIn size={20} className="text-muted-foreground shrink-0" />
                 <div>
-                  <h2 className="font-semibold">Connect Existing Wallet</h2>
-                  <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
-                    Authenticate with your existing passkey to restore access
+                  <h2 className="font-medium text-sm">Connect Existing</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Sign in with your existing passkey.
                   </p>
                 </div>
-              </div>
-            </button>
+              </CardContent>
+            </Card>
+
+            <p className="text-center text-[10px] text-muted-foreground font-medium uppercase tracking-widest pt-4">
+              Powered by PasskeyKit
+            </p>
           </motion.div>
         )}
       </AnimatePresence>

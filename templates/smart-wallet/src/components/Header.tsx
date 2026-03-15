@@ -1,10 +1,8 @@
 'use client';
 
-// src/components/Header.tsx
-//
-// App header: wallet address pill + disconnect + dark mode toggle.
-
 import { useCallback, useState } from 'react';
+import { Copy, Check, LogOut, Sun, Moon } from 'lucide-react';
+import { Button } from './ui/Button';
 
 interface HeaderProps {
   contractId: string;
@@ -28,42 +26,31 @@ export function Header({ contractId, onDisconnect, isDark, onToggleTheme }: Head
   }, [contractId]);
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-[hsl(var(--border))] bg-[hsl(var(--background))]/80 backdrop-blur-sm">
-      <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
-        {/* Brand */}
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-stellar-blue to-stellar-purple flex items-center justify-center text-white text-xs font-bold">
-            S
-          </div>
-          <span className="font-semibold text-sm hidden sm:block">Stellar MCP Wallet</span>
+    <header className="sticky top-0 z-40 w-full border-b bg-background/80 backdrop-blur-sm">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2.5">
+          <span className="font-semibold text-sm tracking-tight">Stellar Smart Wallet</span>
+          <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Testnet</span>
         </div>
 
-        {/* Wallet pill */}
-        <button
-          onClick={copy}
-          title="Click to copy address"
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[hsl(var(--muted))] hover:bg-[hsl(var(--accent))] transition-colors text-xs font-mono"
-        >
-          <span className="w-2 h-2 rounded-full bg-green-400 shrink-0" />
-          <span>{truncate(contractId)}</span>
-          <span className="text-[hsl(var(--muted-foreground))]">{copied ? '✓' : '⎘'}</span>
-        </button>
-
-        {/* Actions */}
         <div className="flex items-center gap-2">
           <button
-            onClick={onToggleTheme}
-            className="p-2 rounded-lg hover:bg-[hsl(var(--accent))] transition-colors text-[hsl(var(--muted-foreground))]"
-            aria-label="Toggle theme"
+            onClick={copy}
+            title="Copy address"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-secondary hover:bg-accent transition-colors text-xs font-mono"
           >
-            {isDark ? '☀️' : '🌙'}
+            <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
+            <span>{truncate(contractId)}</span>
+            {copied ? <Check size={12} /> : <Copy size={12} className="text-muted-foreground" />}
           </button>
-          <button
-            onClick={onDisconnect}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-[hsl(var(--border))] hover:bg-[hsl(var(--destructive))] hover:text-[hsl(var(--destructive-foreground))] hover:border-transparent transition-colors"
-          >
-            Disconnect
-          </button>
+
+          <Button variant="ghost" size="icon" onClick={onToggleTheme} aria-label="Toggle theme">
+            {isDark ? <Sun size={16} /> : <Moon size={16} />}
+          </Button>
+
+          <Button variant="ghost" size="icon" onClick={onDisconnect} aria-label="Disconnect">
+            <LogOut size={16} />
+          </Button>
         </div>
       </div>
     </header>

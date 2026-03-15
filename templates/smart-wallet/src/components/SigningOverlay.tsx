@@ -1,63 +1,48 @@
 'use client';
 
-// src/components/SigningOverlay.tsx
-//
-// Full-screen overlay shown while awaiting passkey authentication or tx submission.
-
 import { motion, AnimatePresence } from 'framer-motion';
+import { Fingerprint, Send, Loader2 } from 'lucide-react';
 
 interface SigningOverlayProps {
   phase: 'signing' | 'submitting' | null;
 }
 
 export function SigningOverlay({ phase }: SigningOverlayProps) {
-  const open = phase === 'signing' || phase === 'submitting';
-
   return (
     <AnimatePresence>
-      {open && (
+      {phase && (
         <motion.div
-          key="signing-overlay"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm px-4"
         >
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
+            initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            transition={{ type: 'spring', duration: 0.4 }}
-            className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-8 flex flex-col items-center gap-5 shadow-2xl max-w-xs w-full mx-4"
+            exit={{ scale: 0.95, opacity: 0 }}
+            className="text-center space-y-4"
           >
-            {phase === 'signing' ? (
-              <>
-                {/* Fingerprint icon animation */}
-                <motion.div
-                  animate={{ scale: [1, 1.08, 1] }}
-                  transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
-                  className="w-16 h-16 rounded-full bg-[hsl(var(--primary))]/10 flex items-center justify-center text-3xl"
-                >
-                  ☝
-                </motion.div>
-                <div className="text-center">
-                  <p className="font-semibold">Awaiting passkey…</p>
-                  <p className="text-sm text-[hsl(var(--muted-foreground))] mt-1">
-                    Authenticate with Touch ID, Face ID, or your hardware key
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="w-12 h-12 border-4 border-[hsl(var(--primary))] border-t-transparent rounded-full animate-spin" />
-                <div className="text-center">
-                  <p className="font-semibold">Submitting…</p>
-                  <p className="text-sm text-[hsl(var(--muted-foreground))] mt-1">
-                    Sending transaction to Stellar via Launchtube
-                  </p>
-                </div>
-              </>
-            )}
+            <div className="mx-auto w-16 h-16 rounded-lg bg-secondary flex items-center justify-center">
+              {phase === 'signing' ? (
+                <Fingerprint size={32} className="text-foreground" />
+              ) : (
+                <Send size={32} className="text-foreground" />
+              )}
+            </div>
+
+            <div>
+              <h2 className="text-lg font-semibold">
+                {phase === 'signing' ? 'Authorize Action' : 'Broadcasting'}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                {phase === 'signing'
+                  ? 'Confirm with your biometric or security key.'
+                  : 'Sending your transaction to the Stellar network.'}
+              </p>
+            </div>
+
+            <Loader2 size={20} className="animate-spin mx-auto text-muted-foreground" />
           </motion.div>
         </motion.div>
       )}

@@ -1,11 +1,8 @@
 'use client';
 
-// src/components/TransactionModal.tsx
-//
-// Modal: previews transaction params + XDR before user confirms & signs.
-
-import { motion, AnimatePresence } from 'framer-motion';
-import { XdrViewer } from './XdrViewer';
+import { motion } from 'framer-motion';
+import { AlertCircle, Check, X } from 'lucide-react';
+import { Button } from './ui/Button';
 
 interface TransactionModalProps {
   open: boolean;
@@ -24,115 +21,64 @@ export function TransactionModal({
   onConfirm,
   onCancel,
 }: TransactionModalProps) {
-  return (
-    <AnimatePresence>
-      {open && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            key="backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onCancel}
-            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
-          />
+  if (!open) return null;
 
-          {/* Modal */}
-          <motion.div
-            key="modal"
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={{ type: 'spring', duration: 0.3 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
-          >
-            <div className="w-full max-w-md rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-2xl p-6 space-y-5 pointer-events-auto">
-              {/* Header */}
-              <div className="space-y-1">
-                <h2 className="font-semibold text-lg">Confirm Transaction</h2>
-                {toolName && (
-                  <p className="text-sm text-[hsl(var(--muted-foreground))]">
-                    Tool:{' '}
-                    <code className="font-mono text-xs bg-[hsl(var(--muted))] px-1.5 py-0.5 rounded">
-                      {toolName}
-                    </code>
-                  </p>
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        onClick={onCancel}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+      />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="relative w-full max-w-md bg-card border rounded-lg shadow-lg overflow-hidden"
+      >
+        <div className="p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Confirm Transaction</h2>
+            <Button variant="ghost" size="icon" onClick={onCancel}>
+              <X size={18} />
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            <div className="p-3 rounded-md bg-secondary">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Operation</p>
+              <p className="font-medium">{toolName}</p>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Arguments</p>
+              <div className="p-3 rounded-md bg-secondary font-mono text-xs max-h-32 overflow-y-auto">
+                {args && Object.keys(args).length > 0 ? (
+                  <pre className="whitespace-pre-wrap">{JSON.stringify(args, null, 2)}</pre>
+                ) : (
+                  <span className="text-muted-foreground italic">No arguments</span>
                 )}
               </div>
-
-              {/* Args summary */}
-              {args && Object.keys(args).length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))]">
-                    Parameters
-                  </h3>
-                  <div className="rounded-lg bg-[hsl(var(--muted))] p-3 space-y-1.5 max-h-40 overflow-y-auto">
-                    {flattenArgs(args).map(([key, val]) => (
-                      <div key={key} className="flex items-start gap-2 text-sm">
-                        <span className="text-[hsl(var(--muted-foreground))] font-mono text-xs min-w-[80px] shrink-0">
-                          {key}
-                        </span>
-                        <span className="font-mono text-xs break-all">{formatVal(val)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* XDR viewer */}
-              {xdr && <XdrViewer xdr={xdr} />}
-
-              {/* Warning */}
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                Your browser will prompt for biometric authentication. This transaction will be
-                submitted to Stellar via Launchtube.
-              </p>
-
-              {/* Actions */}
-              <div className="flex gap-3">
-                <button
-                  onClick={onCancel}
-                  className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-[hsl(var(--border))] hover:bg-[hsl(var(--accent))] transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={onConfirm}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 transition-opacity"
-                >
-                  Confirm & Sign
-                </button>
-              </div>
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+          </div>
+
+          <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-xs font-medium">
+            <AlertCircle size={16} className="shrink-0" />
+            <p>This action modifies the Stellar blockchain and requires your signature.</p>
+          </div>
+
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={onCancel} className="flex-1">
+              Cancel
+            </Button>
+            <Button onClick={onConfirm} className="flex-1 gap-2">
+              <Check size={16} />
+              Sign & Confirm
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
   );
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function flattenArgs(
-  args: Record<string, unknown>,
-  prefix = '',
-): [string, unknown][] {
-  const entries: [string, unknown][] = [];
-  for (const [k, v] of Object.entries(args)) {
-    const key = prefix ? `${prefix}.${k}` : k;
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      entries.push(...flattenArgs(v as Record<string, unknown>, key));
-    } else {
-      entries.push([key, v]);
-    }
-  }
-  return entries;
-}
-
-function formatVal(v: unknown): string {
-  if (v === null) return 'null';
-  if (typeof v === 'string') return v.length > 40 ? `${v.slice(0, 40)}…` : v;
-  if (typeof v === 'object') return JSON.stringify(v);
-  return String(v);
 }

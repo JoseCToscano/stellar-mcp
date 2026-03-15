@@ -1,10 +1,8 @@
 'use client';
 
-// src/app/page.tsx
-//
-// Entrypoint: renders WalletSetup if no wallet connected, Dashboard otherwise.
-
 import { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { WifiOff, Loader2, RefreshCw } from 'lucide-react';
 import { useWallet } from '@/hooks/useWallet';
 import { useMCP } from '@/hooks/useMCP';
 import { useTransaction } from '@/hooks/useTransaction';
@@ -14,17 +12,16 @@ import { ToolBrowser } from '@/components/ToolBrowser';
 import { TransactionModal } from '@/components/TransactionModal';
 import { SigningOverlay } from '@/components/SigningOverlay';
 import { ResultToast } from '@/components/ResultToast';
+import { Button } from '@/components/ui/Button';
 
 export default function Page() {
   const wallet = useWallet();
   const mcp = useMCP();
   const tx = useTransaction();
 
-  // Dark mode state (synced with document root class)
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    // Read initial state from class applied by ThemeScript
     setIsDark(document.documentElement.classList.contains('dark'));
   }, []);
 
@@ -35,7 +32,6 @@ export default function Page() {
     localStorage.setItem('sw:theme', next ? 'dark' : 'light');
   }, [isDark]);
 
-  // Track last read tool for result display
   const [lastReadTool, setLastReadTool] = useState<string | null>(null);
 
   const handleExecute = useCallback(
@@ -57,7 +53,6 @@ export default function Page() {
     setLastReadTool(null);
   }, [tx]);
 
-  // No wallet → setup screen
   if (!wallet.contractId) {
     return <WalletSetup wallet={wallet} />;
   }
@@ -66,7 +61,7 @@ export default function Page() {
     tx.phase === 'simulating' || tx.phase === 'signing' || tx.phase === 'submitting';
 
   return (
-    <>
+    <div className="min-h-screen bg-background">
       <Header
         contractId={wallet.contractId}
         onDisconnect={wallet.disconnect}
@@ -74,43 +69,68 @@ export default function Page() {
         onToggleTheme={toggleTheme}
       />
 
-      <main className="max-w-5xl mx-auto px-4 py-8">
-        {/* MCP server status */}
-        {mcp.error ? (
-          <div className="rounded-xl border border-[hsl(var(--destructive))]/30 bg-[hsl(var(--destructive))]/10 px-5 py-4 text-sm text-[hsl(var(--destructive))] mb-6">
-            <strong>Could not connect to MCP server.</strong>
-            <br />
-            {mcp.error}
-            <br />
-            Make sure <code className="font-mono text-xs">NEXT_PUBLIC_MCP_SERVER_URL</code> is set
-            correctly and the server is running.
-            <button
-              onClick={mcp.refresh}
-              className="ml-4 underline hover:no-underline"
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+        <AnimatePresence mode="wait">
+          {mcp.error ? (
+            <motion.div
+              key="mcp-error"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="rounded-lg border border-destructive/20 bg-destructive/5 p-6 text-center space-y-3"
             >
-              Retry
-            </button>
-          </div>
-        ) : mcp.loading ? (
-          <div className="flex items-center gap-3 text-sm text-[hsl(var(--muted-foreground))] mb-6">
-            <div className="w-4 h-4 border-2 border-[hsl(var(--primary))] border-t-transparent rounded-full animate-spin" />
-            Connecting to MCP server…
-          </div>
-        ) : null}
+              <WifiOff size={24} className="mx-auto text-destructive" />
+              <div>
+                <h2 className="text-lg font-semibold">Connection Failed</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Could not connect to the Stellar MCP server.
+                </p>
+              </div>
+              <pre className="p-3 rounded-md bg-secondary text-xs font-mono text-left overflow-x-auto max-w-md mx-auto">
+                {mcp.error}
+              </pre>
+              <Button onClick={mcp.refresh} variant="outline" className="gap-2">
+                <RefreshCw size={14} />
+                Retry
+              </Button>
+            </motion.div>
+          ) : mcp.loading ? (
+            <motion.div
+              key="mcp-loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center justify-center py-20 space-y-3"
+            >
+              <Loader2 size={24} className="animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Loading tools...</p>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="mcp-ready"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <div className="mb-6">
+                <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Interact with your smart contract via MCP.
+                </p>
+              </div>
 
-        {!mcp.loading && !mcp.error && (
-          <ToolBrowser
-            tools={mcp.tools}
-            contractId={wallet.contractId}
-            onExecute={handleExecute}
-            isExecuting={isExecuting}
-            readResult={tx.readResult}
-            lastReadTool={lastReadTool}
-          />
-        )}
+              <ToolBrowser
+                tools={mcp.tools}
+                contractId={wallet.contractId}
+                onExecute={handleExecute}
+                isExecuting={isExecuting}
+                readResult={tx.readResult}
+                lastReadTool={lastReadTool}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
-      {/* Transaction preview modal */}
       <TransactionModal
         open={tx.phase === 'previewing'}
         toolName={tx.pendingToolName}
@@ -120,20 +140,18 @@ export default function Page() {
         onCancel={tx.cancel}
       />
 
-      {/* Passkey / submitting overlay */}
       <SigningOverlay
         phase={
           tx.phase === 'signing' || tx.phase === 'submitting' ? tx.phase : null
         }
       />
 
-      {/* Result toast */}
       <ResultToast
         phase={tx.phase}
         txHash={tx.txHash}
         error={tx.error}
         onDismiss={handleToastDismiss}
       />
-    </>
+    </div>
   );
 }

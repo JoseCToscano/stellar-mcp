@@ -1,106 +1,69 @@
 'use client';
 
-// src/components/ResultToast.tsx
-//
-// Slide-in toast notification: success (tx hash + explorer link) or error.
-// Auto-dismisses after 8 seconds.
-
-import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CheckCircle2, AlertCircle, ExternalLink, X } from 'lucide-react';
 
 interface ResultToastProps {
-  phase: 'success' | 'error' | string;
+  phase: string;
   txHash: string | null;
   error: string | null;
   onDismiss: () => void;
 }
 
-const EXPLORER_BASE = 'https://stellar.expert/explorer/testnet/tx/';
-
 export function ResultToast({ phase, txHash, error, onDismiss }: ResultToastProps) {
-  const [visible, setVisible] = useState(false);
-
-  const dismiss = useCallback(() => {
-    setVisible(false);
-    setTimeout(onDismiss, 300); // wait for exit animation
-  }, [onDismiss]);
-
-  useEffect(() => {
-    if (phase === 'success' || phase === 'error') {
-      setVisible(true);
-      const timer = setTimeout(dismiss, 8000);
-      return () => clearTimeout(timer);
-    } else {
-      setVisible(false);
-    }
-  }, [phase, dismiss]);
-
-  const isSuccess = phase === 'success';
+  const isSuccess = phase === 'success' && !!txHash;
+  const isError = phase === 'error';
 
   return (
     <AnimatePresence>
-      {visible && (
-        <motion.div
-          key="toast"
-          initial={{ opacity: 0, x: 20, y: 0 }}
-          animate={{ opacity: 1, x: 0, y: 0 }}
-          exit={{ opacity: 0, x: 20 }}
-          className="fixed bottom-5 right-5 z-[70] max-w-sm w-full"
-        >
-          <div
-            className={`rounded-xl border shadow-xl p-4 space-y-2 ${
-              isSuccess
-                ? 'border-green-500/30 bg-green-500/10'
-                : 'border-[hsl(var(--destructive))]/30 bg-[hsl(var(--destructive))]/10'
+      {(isSuccess || isError) && (
+        <div className="fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4 pointer-events-none">
+          <motion.div
+            initial={{ y: 40, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 20, opacity: 0 }}
+            className={`pointer-events-auto w-full max-w-md rounded-lg border shadow-lg bg-card p-4 flex items-start gap-3 ${
+              isSuccess ? 'border-success/30' : 'border-destructive/30'
             }`}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className={`text-lg ${isSuccess ? 'text-green-400' : 'text-red-400'}`}>
-                  {isSuccess ? '✓' : '✕'}
-                </span>
-                <span className="font-semibold text-sm">
-                  {isSuccess ? 'Transaction submitted' : 'Transaction failed'}
-                </span>
-              </div>
-              <button
-                onClick={dismiss}
-                className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors text-xs"
-              >
-                ✕
-              </button>
+            <div className="shrink-0 mt-0.5">
+              {isSuccess ? (
+                <CheckCircle2 size={20} className="text-success" />
+              ) : (
+                <AlertCircle size={20} className="text-destructive" />
+              )}
             </div>
 
-            {isSuccess && txHash && (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs break-all text-[hsl(var(--foreground))]">
-                    {txHash.slice(0, 20)}…{txHash.slice(-8)}
-                  </span>
-                  <button
-                    onClick={() => navigator.clipboard.writeText(txHash)}
-                    className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] shrink-0"
-                    title="Copy hash"
-                  >
-                    ⎘
-                  </button>
-                </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">
+                {isSuccess ? 'Transaction Confirmed' : 'Execution Failed'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                {isSuccess
+                  ? 'Successfully broadcast on Stellar testnet.'
+                  : error || 'An unexpected error occurred.'}
+              </p>
+              {isSuccess && txHash && (
                 <a
-                  href={`${EXPLORER_BASE}${txHash}`}
+                  href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-[hsl(var(--primary))] hover:underline"
+                  className="inline-flex items-center gap-1 text-xs text-success hover:underline mt-1.5"
                 >
-                  View on Stellar Expert →
+                  <ExternalLink size={12} />
+                  View on Explorer
                 </a>
-              </div>
-            )}
+              )}
+            </div>
 
-            {!isSuccess && error && (
-              <p className="text-xs text-[hsl(var(--muted-foreground))] break-words">{error}</p>
-            )}
-          </div>
-        </motion.div>
+            <button
+              onClick={onDismiss}
+              className="p-1 rounded-md hover:bg-accent text-muted-foreground shrink-0"
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
+        </div>
       )}
     </AnimatePresence>
   );
