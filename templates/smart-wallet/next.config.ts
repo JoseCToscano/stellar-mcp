@@ -3,6 +3,18 @@ import path from 'path';
 
 const nextConfig: NextConfig = {
   transpilePackages: ['passkey-kit', 'passkey-kit-sdk', 'sac-sdk'],
+
+  // Proxy /mcp requests to the actual MCP server to avoid browser CORS issues.
+  // The MCPClient runs in the browser, so cross-origin requests get blocked.
+  async rewrites() {
+    const target = process.env.MCP_PROXY_TARGET || 'http://localhost:3000/mcp';
+    return [
+      {
+        source: '/mcp',
+        destination: target,
+      },
+    ];
+  },
   webpack: (config) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,

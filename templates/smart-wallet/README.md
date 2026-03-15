@@ -38,10 +38,11 @@ Fill in `.env.local`:
 
 | Variable | Where to get it |
 |---|---|
-| `NEXT_PUBLIC_MCP_SERVER_URL` | URL of your running MCP server (e.g. `http://localhost:3001/mcp`) |
+| `MCP_PROXY_TARGET` | URL of your running MCP server (e.g. `http://localhost:3000/mcp`) |
+| `NEXT_PUBLIC_MCP_SERVER_URL` | Leave as `/mcp` (proxied by Next.js to avoid CORS) |
 | `NEXT_PUBLIC_RPC_URL` | Stellar RPC endpoint (default: `https://soroban-testnet.stellar.org`) |
 | `NEXT_PUBLIC_NETWORK_PASSPHRASE` | Network passphrase (default: `Test SDF Network ; September 2015`) |
-| `NEXT_PUBLIC_WALLET_WASM_HASH` | Smart wallet WASM hash on your target network (a testnet hash is provided in `.env.example`) |
+| `NEXT_PUBLIC_WALLET_WASM_HASH` | Smart wallet WASM hash (a testnet hash is provided in `.env.example`) |
 | `NEXT_PUBLIC_RELAYER_URL` | OZ Relayer endpoint (testnet: `https://channels.openzeppelin.com/testnet`) |
 | `NEXT_PUBLIC_RELAYER_API_KEY` | Get one at [channels.openzeppelin.com/testnet/gen](https://channels.openzeppelin.com/testnet/gen) |
 
@@ -51,7 +52,7 @@ The smart wallet needs a running Stellar MCP server to discover contract tools. 
 
 ```bash
 cd your-mcp-server/
-USE_HTTP=true PORT=3001 node dist/index.js
+USE_HTTP=true PORT=3000 node dist/index.js
 ```
 
 ### 4. Run the app
