@@ -1,0 +1,16 @@
+{
+  "name": "Stellar Smart Wallet",
+  "short_name": "Smart Wallet",
+  "description": "Passkey-powered smart account interface for Stellar MCP servers.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#3E5AC3",
+  "icons": [
+    {
+      "src": "/icon",
+      "sizes": "32x32",
+      "type": "image/png"
+    }
+  ]
+}
