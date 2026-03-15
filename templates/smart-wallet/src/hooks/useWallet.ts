@@ -6,7 +6,7 @@
 // Persisted in localStorage under 'sw:keyId' and 'sw:contractId'.
 
 import { useState, useCallback, useEffect } from 'react';
-import { getAccount } from '@/lib/passkey';
+import { getAccount, getServer, initWallet } from '@/lib/passkey';
 
 const KEY_ID_KEY = 'sw:keyId';
 const CONTRACT_ID_KEY = 'sw:contractId';
@@ -27,12 +27,17 @@ export function useWallet(): WalletState {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load from localStorage on mount (client-only)
+  // Load from localStorage on mount (client-only) and re-init PasskeyKit wallet
   useEffect(() => {
     const storedKeyId = localStorage.getItem(KEY_ID_KEY);
     const storedContractId = localStorage.getItem(CONTRACT_ID_KEY);
     if (storedKeyId) setKeyId(storedKeyId);
-    if (storedContractId) setContractId(storedContractId);
+    if (storedContractId) {
+      setContractId(storedContractId);
+      // Re-initialize PasskeyKit's internal wallet client so sign() works
+      // after page refresh without requiring another WebAuthn prompt.
+      initWallet(storedContractId);
+    }
   }, []);
 
   const persist = useCallback((kId: string, cId: string) => {
@@ -48,6 +53,8 @@ export function useWallet(): WalletState {
       setError(null);
       try {
         const result = await getAccount().createWallet('Stellar MCP', username);
+        // Submit the signed deployment tx to actually deploy the wallet on-chain
+        await getServer().send(result.signedTx);
         persist(result.keyIdBase64, result.contractId);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to create wallet';

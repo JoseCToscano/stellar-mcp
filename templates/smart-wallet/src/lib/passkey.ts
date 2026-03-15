@@ -5,7 +5,7 @@
 // PasskeyKit + PasskeyServer — lazily initialized.
 // Throws a clear error if env vars are missing rather than crashing silently.
 
-import { PasskeyKit, PasskeyServer } from 'passkey-kit';
+import { PasskeyKit, PasskeyServer, PasskeyClient } from 'passkey-kit';
 
 let _account: PasskeyKit | null = null;
 let _server: PasskeyServer | null = null;
@@ -25,6 +25,22 @@ export function getAccount(): PasskeyKit {
     _account = new PasskeyKit({ rpcUrl, networkPassphrase, walletWasmHash });
   }
   return _account;
+}
+
+/**
+ * Initialize PasskeyKit's internal wallet client from a known contractId.
+ * Required after page refresh so that sign() works without requiring
+ * another WebAuthn prompt (connectWallet triggers WebAuthn).
+ */
+export function initWallet(contractId: string): void {
+  const account = getAccount();
+  if (!account.wallet) {
+    account.wallet = new PasskeyClient({
+      contractId,
+      rpcUrl: process.env.NEXT_PUBLIC_RPC_URL!,
+      networkPassphrase: process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE!,
+    });
+  }
 }
 
 export function getServer(): PasskeyServer {

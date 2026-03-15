@@ -79,6 +79,10 @@ export function ToolBrowser({
                 />
               </CardContent>
             </Card>
+
+            {readResult !== null && readResult !== undefined && lastReadTool === selectedTool.name && (
+              <ReadResultCard result={readResult} toolName={lastReadTool} />
+            )}
           </motion.div>
         ) : (
           <motion.div

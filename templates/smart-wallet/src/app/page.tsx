@@ -49,8 +49,9 @@ export default function Page() {
   }, [tx, wallet.keyId]);
 
   const handleToastDismiss = useCallback(() => {
+    // Only clear lastReadTool for write operations (reads don't show toast)
+    if (tx.txHash) setLastReadTool(null);
     tx.reset();
-    setLastReadTool(null);
   }, [tx]);
 
   if (!wallet.contractId) {
