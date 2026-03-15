@@ -4,8 +4,18 @@
 //
 // Manages PasskeyKit wallet state: keyId + contractId.
 // Persisted in localStorage under 'sw:keyId' and 'sw:contractId'.
+//
+// Transaction flow:
+//   createWallet → submit deploy tx directly to Stellar RPC
+//     The deploy tx uses walletKeypair as source (funded via friendbot on testnet).
+//     Direct RPC submission avoids the OZ Relayer's strict fee validation, which
+//     rejects the doubled fee produced by stellar-sdk's AssembledTransaction.sign().
+//
+//   All write operations (after wallet deployed) → OZ Relayer via getServer().send()
+//     This is why NEXT_PUBLIC_RELAYER_API_KEY is required: fee-sponsored user txs.
 
 import { useState, useCallback, useEffect } from 'react';
+import type { Api } from '@stellar/stellar-sdk/rpc';
 import { getAccount, getServer, initWallet } from '@/lib/passkey';
 
 const KEY_ID_KEY = 'sw:keyId';
@@ -52,9 +62,43 @@ export function useWallet(): WalletState {
       setIsConnecting(true);
       setError(null);
       try {
-        const result = await getAccount().createWallet('Stellar MCP', username);
-        // Submit the signed deployment tx to actually deploy the wallet on-chain
-        await getServer().send(result.signedTx);
+        const account = getAccount();
+        const result = await account.createWallet('Stellar MCP', username);
+
+        // The deploy tx uses walletKeypair as source account.
+        // Fund it via friendbot (testnet only) — safe to ignore if already funded.
+        const sourceAddr = (result.signedTx as { source?: string }).source;
+        if (sourceAddr) {
+          try {
+            await fetch(`https://friendbot.stellar.org?addr=${sourceAddr}`);
+          } catch {
+            // Already funded — ignore
+          }
+        }
+
+        // Submit directly to the Stellar RPC (not the OZ Relayer).
+        // The walletKeypair source account pays the fee from its own balance.
+        // The OZ Relayer is used for all subsequent user write operations.
+        const rpc = account.rpc!;
+        const sendResponse = await rpc.sendTransaction(result.signedTx);
+
+        if (sendResponse.status === 'ERROR') {
+          throw new Error(`Deploy failed to submit: ${JSON.stringify(sendResponse.errorResult ?? '')}`);
+        }
+
+        // Poll until confirmed (up to ~60s)
+        const txHash = sendResponse.hash;
+        let getResponse: Api.GetTransactionResponse | undefined;
+        for (let i = 0; i < 30; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          getResponse = await rpc.getTransaction(txHash);
+          if (getResponse.status !== 'NOT_FOUND') break;
+        }
+
+        if (!getResponse || getResponse.status !== 'SUCCESS') {
+          throw new Error(`Deploy failed: ${getResponse?.status ?? 'TIMEOUT'}`);
+        }
+
         persist(result.keyIdBase64, result.contractId);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Failed to create wallet';
