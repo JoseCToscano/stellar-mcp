@@ -109,11 +109,9 @@ export function useTransaction(): TransactionState {
         setPhase('submitting');
         const result = await getServer().send(signed);
 
-        // Launchtube returns { hash } or { id }
-        const hash =
-          (result as Record<string, string> | null)?.hash ??
-          (result as Record<string, string> | null)?.id ??
-          '';
+        // OZ Relayer returns { hash, transactionId, status }
+        const res = result as unknown as { hash?: string; transactionId?: string } | null;
+        const hash = res?.hash ?? res?.transactionId ?? '';
 
         setTxHash(hash);
         setPendingXdr(null);

@@ -30,16 +30,16 @@ export function getAccount(): PasskeyKit {
 export function getServer(): PasskeyServer {
   if (!_server) {
     const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL;
-    const launchtubeUrl = process.env.NEXT_PUBLIC_LAUNCHTUBE_URL;
-    const launchtubeJwt = process.env.NEXT_PUBLIC_LAUNCHTUBE_JWT;
+    const relayerUrl = process.env.NEXT_PUBLIC_RELAYER_URL;
+    const relayerApiKey = process.env.NEXT_PUBLIC_RELAYER_API_KEY;
 
-    if (!rpcUrl || !launchtubeUrl || !launchtubeJwt) {
+    if (!rpcUrl || !relayerUrl || !relayerApiKey) {
       throw new Error(
-        'Missing Launchtube config. Set NEXT_PUBLIC_LAUNCHTUBE_URL and NEXT_PUBLIC_LAUNCHTUBE_JWT in .env.local'
+        'Missing Relayer config. Set NEXT_PUBLIC_RELAYER_URL and NEXT_PUBLIC_RELAYER_API_KEY in .env.local'
       );
     }
 
-    _server = new PasskeyServer({ rpcUrl, launchtubeUrl, launchtubeJwt });
+    _server = new PasskeyServer({ rpcUrl, relayerUrl, relayerApiKey });
   }
   return _server;
 }

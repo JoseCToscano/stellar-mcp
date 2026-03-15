@@ -16,7 +16,7 @@
     "framer-motion": "^12.0.0",
     "lucide-react": "^0.577.0",
     "next": "^15.5.12",
-    "passkey-kit": "^0.10.21",
+    "passkey-kit": "^0.12.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^3.5.0"
