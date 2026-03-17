@@ -150,11 +150,20 @@ vercel deploy
 
 Set the same environment variables in your Vercel project settings.
 
+## Security
+
+`NEXT_PUBLIC_RELAYER_API_KEY` is prefixed with `NEXT_PUBLIC_`, which means it is bundled into your browser JavaScript and visible to anyone who inspects your site.
+
+To limit exposure:
+
+- Enable **domain restrictions** and **rate limiting** in your OZ Relayer channel settings so the key can only be used from your production domain.
+- For production apps, consider **proxying relayer calls through a Next.js API route** (`/api/relay`) that holds the key server-side and forwards signed transactions — the client never sees the key.
+
 ## Notes
 
 - Wallet state (`keyId`, `contractId`) is stored in `localStorage`
 - The WASM hash must match a deployed smart wallet contract on your target network
-- For mainnet: update `NETWORK_PASSPHRASE`, `RPC_URL`, `RELAYER_URL`, and the explorer link in `ResultToast.tsx`
+- For mainnet: update `NETWORK_PASSPHRASE`, `RPC_URL`, `RELAYER_URL`, and set the correct network in your OZ Relayer channel
 
 ## License
 

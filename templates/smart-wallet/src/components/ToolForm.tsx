@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Play, Loader2 } from 'lucide-react';
 import type { ToolInfo } from '@stellar-mcp/client';
-import { extractArgs, buildToolArgs, parseArgValue, type ArgDef } from '@/lib/schema';
+import { extractArgs, buildToolArgs, parseArgValue, argKey, type ArgDef } from '@stellar-mcp/client';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Badge } from './ui/Badge';
@@ -13,10 +13,6 @@ interface ToolFormProps {
   contractId: string;
   onExecute: (toolName: string, args: Record<string, unknown>) => void;
   isLoading: boolean;
-}
-
-function argKey(arg: ArgDef): string {
-  return arg.path.join('.');
 }
 
 const ADDRESS_ARG_RE = /^(deployer|from|source|wallet|account|admin|sender|owner)$/i;

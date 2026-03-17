@@ -66,9 +66,10 @@ export function useWallet(): WalletState {
         const result = await account.createWallet('Stellar MCP', username);
 
         // The deploy tx uses walletKeypair as source account.
-        // Fund it via friendbot (testnet only) — safe to ignore if already funded.
+        // Fund it via friendbot on testnet — safe to ignore if already funded.
         const sourceAddr = (result.signedTx as { source?: string }).source;
-        if (sourceAddr) {
+        const isTestnet = process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE?.includes('Test SDF');
+        if (sourceAddr && isTestnet) {
           try {
             await fetch(`https://friendbot.stellar.org?addr=${sourceAddr}`);
           } catch {

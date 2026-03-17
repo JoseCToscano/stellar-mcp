@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, ArrowRight, Eye, PenLine, ChevronLeft } from 'lucide-react';
 import type { ToolInfo } from '@stellar-mcp/client';
-import { isReadOperation, extractArgs } from '@/lib/schema';
+import { isReadOperation, extractArgs } from '@stellar-mcp/client';
 import { ToolForm } from './ToolForm';
 import { ReadResultCard } from './ReadResultCard';
 import { Button } from './ui/Button';

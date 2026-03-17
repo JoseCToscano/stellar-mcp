@@ -132,7 +132,7 @@ async function executeTool(
 
   const client = createClient();
   try {
-    const result = await client.call(toolName as never, parsedArgs as never);
+    const result = await client.call(toolName, parsedArgs);
 
     if (isReadOperation(toolName) || !result.xdr) {
       // Read operation — show result directly

@@ -326,7 +326,7 @@ async function executeTool(
 ): Promise<void> {
   const client = createClient();
   try {
-    const result = await client.call(toolName as never, args as never);
+    const result = await client.call(toolName, args);
 
     if (isReadOperation(toolName) || !result.xdr) {
       // ── Read operation: show the result directly ──────────────────────

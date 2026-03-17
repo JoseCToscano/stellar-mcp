@@ -38,7 +38,7 @@ export default function Page() {
     (toolName: string, args: Record<string, unknown>) => {
       if (!wallet.contractId) return;
       setLastReadTool(toolName);
-      tx.execute(toolName, args, wallet.contractId);
+      tx.execute(toolName, args);
     },
     [tx, wallet.contractId],
   );

@@ -10,6 +10,9 @@ interface ResultToastProps {
   onDismiss: () => void;
 }
 
+const isMainnet = (process.env.NEXT_PUBLIC_NETWORK_PASSPHRASE ?? '').includes('Public Global');
+const explorerNetwork = isMainnet ? 'public' : 'testnet';
+
 export function ResultToast({ phase, txHash, error, onDismiss }: ResultToastProps) {
   const isSuccess = phase === 'success' && !!txHash;
   const isError = phase === 'error';
@@ -40,12 +43,12 @@ export function ResultToast({ phase, txHash, error, onDismiss }: ResultToastProp
               </p>
               <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                 {isSuccess
-                  ? 'Successfully broadcast on Stellar testnet.'
+                  ? `Successfully broadcast on Stellar ${explorerNetwork}.`
                   : error || 'An unexpected error occurred.'}
               </p>
               {isSuccess && txHash && (
                 <a
-                  href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
+                  href={`https://stellar.expert/explorer/${explorerNetwork}/tx/${txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-success hover:underline mt-1.5"

@@ -77,7 +77,7 @@ function buildAITools(stellarTools: ToolInfo[]) {
           execute: async (args) => {
             const client = createClient();
             try {
-              const result = await client.call(t.name as never, args as never);
+              const result = await client.call(t.name, args);
 
               // Read operations: return the simulationResult directly
               if (isReadOperation(t.name) || !result.xdr) {

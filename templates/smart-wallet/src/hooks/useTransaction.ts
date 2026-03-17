@@ -8,7 +8,7 @@
 import { useState, useCallback } from 'react';
 import { getAccount, getServer } from '@/lib/passkey';
 import { createClient } from '@/lib/mcp';
-import { isReadOperation } from '@/lib/schema';
+import { isReadOperation } from '@stellar-mcp/client';
 
 export type TxPhase =
   | 'idle'
@@ -29,7 +29,7 @@ export interface TransactionState {
   error: string | null;
 
   // Actions
-  execute: (toolName: string, args: Record<string, unknown>, contractId: string) => Promise<void>;
+  execute: (toolName: string, args: Record<string, unknown>) => Promise<void>;
   confirm: (keyId: string) => Promise<void>;
   cancel: () => void;
   reset: () => void;
@@ -63,7 +63,7 @@ export function useTransaction(): TransactionState {
 
   // Step 1: call the tool via MCP → get XDR or read result
   const execute = useCallback(
-    async (toolName: string, args: Record<string, unknown>, contractId: string) => {
+    async (toolName: string, args: Record<string, unknown>) => {
       reset();
       setPhase('simulating');
 
@@ -97,7 +97,7 @@ export function useTransaction(): TransactionState {
     [reset],
   );
 
-  // Step 2: user confirms → WebAuthn sign → Launchtube submit
+  // Step 2: user confirms → WebAuthn sign → OZ Relayer submit
   const confirm = useCallback(
     async (keyId: string) => {
       if (!pendingXdr) return;
