@@ -25,9 +25,8 @@ from src.lib.utils import sign_transaction, prepare_transaction_for_wallet
 from src.lib.submit import submit_transaction
 from src.schemas import *  # Import Pydantic schemas for MCP tool signatures
 
-# Initialize MCP server with stateless HTTP mode for frontend compatibility
-# This ensures each HTTP request is independent (no session state between requests)
-mcp = FastMCP("{{server_name}}", stateless_http=True)
+# Initialize MCP server
+mcp = FastMCP("{{server_name}}")
 
 # Initialize contract configuration from environment
 config = ContractConfig(
@@ -263,12 +262,82 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "3000"))
 
     if use_http:
-        # Run with HTTP transport for web frontends
-        # FastMCP supports streamable-http transport
+        import time as _time
+        import uvicorn
+
+        RATE_LIMIT = int(os.getenv("RATE_LIMIT", "100"))
+        _window_ms = 60_000
+        _ip_windows: Dict[str, Dict] = {}
+
+        class _RateLimitedApp:
+            """ASGI middleware that applies sliding-window rate limiting to /mcp."""
+
+            def __init__(self, app):
+                self.app = app
+
+            async def __call__(self, scope, receive, send):
+                if scope["type"] != "http" or not scope.get("path", "").startswith("/mcp"):
+                    return await self.app(scope, receive, send)
+
+                client = scope.get("client", ("unknown", 0))
+                ip = client[0] if client else "unknown"
+                now = _time.time() * 1000
+
+                window = _ip_windows.get(ip)
+                if window is None or now > window["reset_at"]:
+                    _ip_windows[ip] = {"count": 1, "reset_at": now + _window_ms}
+                else:
+                    window["count"] += 1
+                    if window["count"] > RATE_LIMIT:
+                        retry_after = max(1, int((window["reset_at"] - now) / 1000))
+                        await send({
+                            "type": "http.response.start",
+                            "status": 429,
+                            "headers": [
+                                [b"content-type", b"application/json"],
+                                [b"retry-after", str(retry_after).encode()],
+                            ],
+                        })
+                        await send({
+                            "type": "http.response.body",
+                            "body": json.dumps({"error": "Rate limit exceeded"}).encode(),
+                        })
+                        return
+
+                await self.app(scope, receive, send)
+
+        # CORS — honour CORS_ORIGINS env var (comma-separated list or '*' for all)
+        import signal
+        from starlette.middleware.cors import CORSMiddleware
+        _cors_raw = os.getenv("CORS_ORIGINS", "*")
+        _cors_origins = [s.strip() for s in _cors_raw.split(",")]
+        _allow_all = "*" in _cors_origins
+
+        # Get the ASGI app from FastMCP, wrap with CORS then rate limiting
+        http_app = mcp.http_app(transport="streamable-http", stateless_http=True)
+        http_app = CORSMiddleware(
+            http_app,
+            allow_origins=["*"] if _allow_all else _cors_origins,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["Content-Type", "Authorization", "Mcp-Session-Id"],
+            allow_credentials=False,
+        )
+        app = _RateLimitedApp(http_app)
+
+        # Graceful shutdown — handle SIGTERM and SIGINT
+        def _shutdown(signum, frame):
+            print(f"\nSignal {signum} received — shutting down gracefully", file=sys.stderr)
+            sys.exit(0)
+        signal.signal(signal.SIGTERM, _shutdown)
+        signal.signal(signal.SIGINT, _shutdown)
+
         print(f"{{server_name}}-mcp MCP server running on HTTP port {port}", file=sys.stderr)
+        print(f"Mode: STATELESS (no sessions)", file=sys.stderr)
+        print(f"Rate limit: {RATE_LIMIT} req/min per IP", file=sys.stderr)
+        print(f"CORS origins: {_cors_raw}", file=sys.stderr)
         print(f"Health check: http://localhost:{port}/health", file=sys.stderr)
         print(f"MCP endpoint: http://localhost:{port}/mcp", file=sys.stderr)
-        mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
+        uvicorn.run(app, host="0.0.0.0", port=port)
     else:
         # Run with stdio transport (default for Claude Desktop)
         print("{{server_name}}-mcp MCP server running on stdio", file=sys.stderr)

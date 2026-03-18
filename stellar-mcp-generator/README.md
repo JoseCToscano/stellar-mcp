@@ -248,20 +248,20 @@ After running `stellar mcp generate`, your output directory will contain:
 ```
 my-token-mcp/
 ├── src/
-│   ├── index.ts              # MCP server entry point with all tools
+│   ├── index.ts              # MCP server entry point (stdio + HTTP, rate limiting)
 │   ├── tools/
 │   │   └── my-token.ts       # Contract function handlers
 │   ├── schemas/
 │   │   └── my-token.ts       # Zod validation schemas
-│   ├── types/
-│   │   └── my-token.ts       # TypeScript type definitions
+│   ├── bindings/             # Auto-generated Stellar TypeScript bindings
 │   └── lib/
 │       ├── transaction.ts    # Transaction parsing utilities
-│       ├── launchtube.ts     # LaunchTube submission client
 │       ├── passkey.ts        # PasskeyKit integration
-│       ├── utils.ts          # Utility functions
+│       ├── utils.ts          # Signing utilities
 │       └── submit.ts         # Transaction submission utilities
 ├── deploy-wallet.ts          # PasskeyKit wallet deployment script
+├── Dockerfile                # Production Docker image (multi-stage)
+├── vercel.json               # Vercel serverless deployment config
 ├── package.json              # Dependencies and scripts (includes pnpm deploy-passkey)
 ├── tsconfig.json             # TypeScript configuration
 ├── .env.example              # Environment variable template
@@ -296,8 +296,6 @@ User → React Frontend → Express API → OpenAI/Anthropic → MCP Server → 
 - "What's the current balance?"
 - "Transfer 100 tokens to GABC..."
 - "Check allowance and increase if needed"
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for full details.
 
 **Currently:** TypeScript MCP servers only. Python support coming soon!
 
@@ -356,6 +354,86 @@ The generator includes full PasskeyKit integration for smart wallet functionalit
 **Using PasskeyKit with Claude Desktop:**
 
 When configuring the MCP server with PasskeyKit support, you'll need to provide the `WALLET_WASM_HASH` in the environment variables. See the Configuration section below for details.
+
+### HTTP Transport
+
+Generated servers support dual transport modes:
+
+- **stdio** (default) — for Claude Desktop and other MCP clients that communicate over stdin/stdout
+- **HTTP** — for web frontends, the CLI agent template, Telegram bot, and production deployments
+
+```bash
+# stdio mode (Claude Desktop)
+node dist/index.js
+
+# HTTP mode
+USE_HTTP=true PORT=3000 node dist/index.js
+```
+
+When HTTP mode is enabled, the server exposes:
+- `POST /mcp` — MCP protocol endpoint
+- `GET /health` — health check (not rate limited)
+- CORS headers, security headers, and request body size limits (1 MB)
+
+### Rate Limiting
+
+HTTP mode includes a built-in sliding-window rate limiter per client IP:
+
+| Environment Variable | Description | Default |
+|---|---|---|
+| `RATE_LIMIT` | Max requests per minute per IP | `100` |
+
+When the limit is exceeded the server responds with HTTP 429 and includes `Retry-After` and `X-RateLimit-Limit` headers. The `/health` endpoint is exempt.
+
+For multi-instance deployments (e.g., behind a load balancer), swap the in-memory limiter for Redis:
+
+```ts
+import { RateLimiterRedis } from 'rate-limiter-flexible';
+```
+
+The `rate-limiter-flexible` package is already included in the generated `package.json`.
+
+### Production Deployment
+
+Generated servers include deployment configurations out of the box.
+
+#### Docker
+
+Both TypeScript and Python servers include a `Dockerfile`:
+
+```bash
+# TypeScript server (multi-stage Node 20 Alpine build)
+cd my-token-mcp
+docker build -t my-mcp-server .
+docker run -p 3000:3000 \
+  -e CONTRACT_ID=CC... \
+  -e SIGNER_SECRET=S... \
+  my-mcp-server
+```
+
+```bash
+# Python server (Python 3.11 slim)
+cd my-python-mcp
+docker build -t my-mcp-server .
+docker run -p 3000:3000 \
+  -e CONTRACT_ID=CC... \
+  -e RPC_URL=https://soroban-testnet.stellar.org \
+  my-mcp-server
+```
+
+Both images run as non-root, include a health check on `/health`, and default to HTTP mode (`USE_HTTP=true PORT=3000`).
+
+#### Vercel (serverless)
+
+TypeScript servers include a `vercel.json` for one-command deployment:
+
+```bash
+cd my-token-mcp
+pnpm run build
+vercel deploy
+```
+
+The MCP endpoint is available at `/mcp` on your Vercel deployment URL.
 
 ---
 
@@ -456,18 +534,34 @@ RUST_LOG=debug cargo run -- generate -c CABC123... -n testnet -v
 ```
 stellar-mcp-generator/
 ├── src/
-│   ├── main.rs              # CLI entry point
-│   ├── lib.rs               # Core library and CLI definitions
+│   ├── main.rs                  # CLI entry point
+│   ├── lib.rs                   # Core library and CLI definitions
 │   ├── commands/
-│   │   ├── generate.rs      # Generate command implementation
-│   │   └── validate.rs      # Validate command implementation
+│   │   ├── generate.rs          # Generate command implementation
+│   │   └── validate.rs          # Validate command implementation
 │   ├── spec/
-│   │   ├── fetcher.rs       # Contract spec fetching from RPC
-│   │   ├── parser.rs        # WASM spec parsing (soroban-spec-tools)
-│   │   └── types.rs         # Internal type definitions
-│   └── generator/
-│       ├── mcp_generator.rs # TypeScript code generation
-│       └── templates.rs     # Template data structures
+│   │   ├── fetcher.rs           # Contract spec fetching from RPC
+│   │   ├── parser.rs            # WASM spec parsing (soroban-spec-tools)
+│   │   └── types.rs             # Internal type definitions
+│   ├── generator/
+│   │   ├── mcp_generator.rs     # TypeScript code generation
+│   │   ├── python_generator.rs  # Python code generation
+│   │   ├── frontend_generator.rs# React frontend generation
+│   │   ├── pydantic_schemas.rs  # Python Pydantic schema generation
+│   │   ├── template_data.rs     # Template data structures
+│   │   └── templates.rs         # Handlebars template registration
+│   └── wizard/                  # Interactive setup wizard
+├── templates/                   # Handlebars templates (TypeScript)
+│   ├── index.ts.hbs             # MCP server entry point
+│   ├── tools.ts.hbs             # Tool handlers
+│   ├── schemas.ts.hbs           # Zod schemas
+│   ├── Dockerfile.hbs           # Docker image (multi-stage)
+│   ├── vercel.json.hbs          # Vercel deployment config
+│   └── python/                  # Python templates
+│       ├── server.py.hbs        # FastMCP server
+│       ├── Dockerfile.hbs       # Python Docker image
+│       └── ...
+├── tests/                       # Integration tests
 ├── Cargo.toml
 └── README.md
 ```

@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+WORKDIR /app
+
+# Install dependencies first (layer-cached)
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir .
+
+# Copy source
+COPY . .
+
+EXPOSE 3000
+
+ENV USE_HTTP=true
+ENV PORT=3000
+
+# Run as non-root for container security
+USER nobody
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:3000/health')" || exit 1
+
+CMD ["python", "server.py"]

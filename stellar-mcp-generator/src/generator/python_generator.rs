@@ -58,6 +58,8 @@ impl<'a> PythonGenerator<'a> {
         self.generate_lib_files()?;
         self.generate_pyproject_toml()?;
         self.generate_env_example()?;
+        self.generate_dockerfile()?;
+        self.generate_dockerignore()?;
         self.generate_readme(spec)?;
 
         println!("  Python MCP server generated!");
@@ -234,6 +236,20 @@ impl<'a> PythonGenerator<'a> {
         let output = hbs.render("env", &data)?;
         fs::write(self.output_dir.join(".env.example"), output)?;
 
+        Ok(())
+    }
+
+    fn generate_dockerfile(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let content = include_str!("../../templates/python/Dockerfile.hbs");
+        fs::write(self.output_dir.join("Dockerfile"), content)?;
+        println!("  Generated Dockerfile");
+        Ok(())
+    }
+
+    fn generate_dockerignore(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let content = "__pycache__\n*.pyc\n.venv\n.env\n.env.local\n*.log\n.git\n.DS_Store\n";
+        fs::write(self.output_dir.join(".dockerignore"), content)?;
+        println!("  Generated .dockerignore");
         Ok(())
     }
 

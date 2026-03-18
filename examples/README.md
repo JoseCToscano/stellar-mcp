@@ -1,8 +1,8 @@
 # Stellar MCP — Examples
 
-Two working examples that show how to use `@stellar-mcp/client` against a live Stellar MCP server.
+Three working examples that show how to use `@stellar-mcp/client` against a live Stellar MCP server.
 
-Both examples target the **Token Factory** contract on Stellar testnet:
+All examples target the **Token Factory** contract on Stellar testnet:
 `CAHLJEQUCNTV7JPAPCMLCBIHOX7FFB57DUARJ6XGTW27FPCVKKY7JM2A`
 
 ---
@@ -80,6 +80,44 @@ cd node-app
 cp .env.example .env   # fill in MCP_URL and SIGNER_SECRET
 npm install
 npm run smoke          # runs smoke-test.ts against your MCP server
+```
+
+---
+
+### `python-server-app` — Python Server + Node.js Client
+
+A smoke test that verifies `@stellar-mcp/client` works with a **Python-generated** MCP server.
+Same read queries and `secretKeySigner` write path as `node-app`, minus PasskeyKit (not supported by the Python server generator).
+
+**Key difference:** The Python server uses underscores in tool names (`get_admin` not `get-admin`) and runs on port 3003. The generated types handle this automatically.
+
+```ts
+import { MCPClient, secretKeySigner } from '@stellar-mcp/client';
+
+// Same SDK — different server
+const client = createMCPClient({ url: 'http://localhost:3003/mcp', ... });
+
+// Read — note underscore tool names (Python convention)
+const { simulationResult: admin } = await client.call('get_admin');
+
+// Write — secretKeySigner only (no PasskeyKit on Python server)
+const { xdr } = await client.call('deploy_token', { deployer, config });
+const result  = await client.signAndSubmit(xdr!, {
+  signer: secretKeySigner(process.env.SIGNER_SECRET!),
+});
+```
+
+**Setup:**
+```bash
+# Start Python server (port 3003)
+cd docs/generated-python-server
+USE_HTTP=true PORT=3003 python server.py
+
+# Run smoke test
+cd examples/python-server-app
+cp .env.example .env   # fill in credentials
+pnpm install
+pnpm run smoke
 ```
 
 ---

@@ -7,6 +7,7 @@ export type {
   ToolDef,
   ToolMap,
   CallResult,
+  SimulateResult,
   SubmitResult,
   ToolInfo,
   Signer,
@@ -26,6 +27,16 @@ export type { LogLevel } from './logger.js';
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 export { MCPClientError, MCPConnectionError, MCPToolError, TransactionError } from './errors.js';
+
+// ─── Schema utilities ─────────────────────────────────────────────────────────
+export {
+  isReadOperation,
+  extractArgs,
+  buildToolArgs,
+  parseArgValue,
+  argKey,
+} from './schema.js';
+export type { ArgDef } from './schema.js';
 
 // ─── Signers ──────────────────────────────────────────────────────────────────
 // Also available via separate entry points for tree-shaking:

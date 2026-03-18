@@ -106,6 +106,19 @@ describe.skipIf(!RUN_INTEGRATION)('MCPClient integration', () => {
     expect(Array.isArray(result.simulationResult)).toBe(true);
   });
 
+  // ─── simulate() (read-only) ─────────────────────────────────────────────────
+
+  it('simulate get-admin returns simulationResult without fee', async () => {
+    const result = await client.simulate('get-admin');
+
+    // Read-only tools have no XDR → no fee
+    expect(result.xdr).toBeUndefined();
+    expect(result.fee).toBeUndefined();
+    const admin = result.simulationResult as string;
+    expect(typeof admin).toBe('string');
+    expect(admin.startsWith('G')).toBe(true);
+  });
+
   // ─── Write tests (requires TEST_ADMIN_ADDRESS + TEST_SECRET_KEY) ────────────
 
   describe.skipIf(!HAS_WRITE_CREDS)('write operations', () => {
@@ -128,6 +141,31 @@ describe.skipIf(!RUN_INTEGRATION)('MCPClient integration', () => {
 
       expect(typeof result.xdr).toBe('string');
       expect((result.xdr as string).length).toBeGreaterThan(0);
+    });
+
+    it('simulate deploy-token returns xdr and fee (no signing)', async () => {
+      const salt = crypto.randomUUID().replace(/-/g, '').padEnd(64, '0');
+
+      const preview = await client.simulate('deploy-token', {
+        deployer: TEST_ADMIN_ADDRESS,
+        config: {
+          admin: TEST_ADMIN_ADDRESS,
+          decimals: 7,
+          initial_supply: '0',
+          manager: TEST_ADMIN_ADDRESS,
+          name: `SimTest_${Date.now()}`,
+          salt,
+          symbol: 'SIM',
+          token_type: { tag: 'Pausable' },
+        },
+      });
+
+      // XDR must be present for a write op
+      expect(typeof preview.xdr).toBe('string');
+      expect((preview.xdr as string).length).toBeGreaterThan(0);
+      // Fee should be extracted from XDR
+      expect(typeof preview.fee).toBe('string');
+      expect(Number(preview.fee)).toBeGreaterThan(0);
     });
 
     it('signAndSubmit with secretKeySigner returns SUCCESS status', async () => {

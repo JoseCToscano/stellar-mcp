@@ -89,6 +89,9 @@ impl<'a> McpGenerator<'a> {
         self.generate_package_json(args)?;
         self.generate_tsconfig()?;
         self.generate_env_example(args)?;
+        self.generate_dockerfile()?;
+        self.generate_dockerignore()?;
+        self.generate_vercel_json()?;
         self.generate_readme(spec, args)?;
 
         Ok(())
@@ -483,17 +486,58 @@ impl<'a> McpGenerator<'a> {
         content.push_str("  if (useHttp) {\n");
         content.push_str("    // HTTP mode with StreamableHTTP transport - STATELESS mode\n");
         content.push_str("    // Each request creates a new server/transport pair\n");
+        content.push_str("    const RATE_LIMIT = parseInt(process.env.RATE_LIMIT ?? '100', 10);\n");
+        content.push_str("    const windowMs = 60_000;\n");
+        content.push_str("    const ipWindows = new Map<string, { count: number; resetAt: number }>();\n\n");
+        content.push_str("    function consumeRateLimit(ip: string): boolean {\n");
+        content.push_str("      const now = Date.now();\n");
+        content.push_str("      const entry = ipWindows.get(ip);\n");
+        content.push_str("      if (!entry || now >= entry.resetAt) {\n");
+        content.push_str("        ipWindows.set(ip, { count: 1, resetAt: now + windowMs });\n");
+        content.push_str("        return true;\n");
+        content.push_str("      }\n");
+        content.push_str("      if (entry.count >= RATE_LIMIT) return false;\n");
+        content.push_str("      entry.count++;\n");
+        content.push_str("      return true;\n");
+        content.push_str("    }\n\n");
+        content.push_str("    // Clean up stale rate-limit entries every 5 minutes\n");
+        content.push_str("    setInterval(() => {\n");
+        content.push_str("      const now = Date.now();\n");
+        content.push_str("      for (const [ip, entry] of ipWindows) {\n");
+        content.push_str("        if (now >= entry.resetAt) ipWindows.delete(ip);\n");
+        content.push_str("      }\n");
+        content.push_str("    }, 5 * 60_000);\n\n");
+        content.push_str("    const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? '*').split(',').map((s: string) => s.trim());\n");
         content.push_str("    const app = express();\n");
         content.push_str("    app.use(cors({\n");
-        content.push_str("      origin: '*',\n");
+        content.push_str("      origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {\n");
+        content.push_str("        if (CORS_ORIGINS.includes('*') || !origin || CORS_ORIGINS.includes(origin)) cb(null, true);\n");
+        content.push_str("        else cb(new Error('Not allowed by CORS'));\n");
+        content.push_str("      },\n");
         content.push_str("      methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],\n");
         content.push_str("      allowedHeaders: ['Content-Type', 'Accept', 'mcp-session-id'],\n");
         content.push_str("      exposedHeaders: ['mcp-session-id'],\n");
         content.push_str("    }));\n");
         content.push_str("    app.use(express.json());\n\n");
 
+        content.push_str("    // Health check — always accessible, not rate limited\n");
         content.push_str("    app.get('/health', (_req, res) => {\n");
         content.push_str("      res.json({ status: 'ok' });\n");
+        content.push_str("    });\n\n");
+
+        content.push_str("    // Rate limiting middleware for MCP endpoints\n");
+        content.push_str("    app.use('/mcp', (req, res, next) => {\n");
+        content.push_str("      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';\n");
+        content.push_str("      if (!consumeRateLimit(ip)) {\n");
+        content.push_str("        res.writeHead(429, {\n");
+        content.push_str("          'Content-Type': 'application/json',\n");
+        content.push_str("          'Retry-After': '60',\n");
+        content.push_str("          'X-RateLimit-Limit': String(RATE_LIMIT),\n");
+        content.push_str("        });\n");
+        content.push_str("        res.end(JSON.stringify({ error: 'Too Many Requests', retryAfter: 60 }));\n");
+        content.push_str("        return;\n");
+        content.push_str("      }\n");
+        content.push_str("      next();\n");
         content.push_str("    });\n\n");
 
         // POST endpoint - handles all MCP requests in stateless mode
@@ -541,12 +585,25 @@ impl<'a> McpGenerator<'a> {
         content.push_str("      });\n");
         content.push_str("    });\n\n");
 
-        content.push_str("    app.listen(port, () => {\n");
-        content.push_str(&format!("      console.error('{}-mcp MCP server running on HTTP port', port);\n", self.server_name));
+        content.push_str("    const httpServer = app.listen(port, () => {\n");
+        content.push_str(&format!("      console.error('{}-mcp MCP server running on HTTP port ' + port);\n", self.server_name));
         content.push_str("      console.error('Mode: STATELESS (no sessions)');\n");
+        content.push_str("      console.error('Rate limit: ' + RATE_LIMIT + ' req/min per IP');\n");
+        content.push_str("      console.error('CORS origins: ' + CORS_ORIGINS.join(', '));\n");
         content.push_str("      console.error('Health check: http://localhost:' + port + '/health');\n");
         content.push_str("      console.error('MCP endpoint: http://localhost:' + port + '/mcp');\n");
         content.push_str("    });\n");
+        content.push_str("    // Graceful shutdown\n");
+        content.push_str("    const shutdown = (signal: string) => {\n");
+        content.push_str("      console.error('\\n' + signal + ' received — shutting down gracefully');\n");
+        content.push_str("      httpServer.close(() => {\n");
+        content.push_str("        console.error('HTTP server closed');\n");
+        content.push_str("        process.exit(0);\n");
+        content.push_str("      });\n");
+        content.push_str("      setTimeout(() => { console.error('Forcing exit'); process.exit(1); }, 10_000).unref();\n");
+        content.push_str("    };\n");
+        content.push_str("    process.on('SIGTERM', () => shutdown('SIGTERM'));\n");
+        content.push_str("    process.on('SIGINT',  () => shutdown('SIGINT'));\n");
         content.push_str("  } else {\n");
         content.push_str("    // Stdio mode (default for Claude Desktop)\n");
         content.push_str("    const server = createMcpServer();\n");
@@ -1289,7 +1346,7 @@ export async function signAndSendWithPasskey(
     fn generate_package_json(&self, _args: &GenerateArgs) -> Result<(), Box<dyn std::error::Error>> {
         let deps = serde_json::json!({
             "@modelcontextprotocol/sdk": "^1.24.3",
-            "@stellar/stellar-sdk": "^14.0.0",
+            "@stellar/stellar-sdk": "~14.4.0",
             "zod": "^3.23.0",
             "dotenv": "^16.4.0",
             "passkey-kit": "^0.10.19",
@@ -1383,6 +1440,16 @@ export async function signAndSendWithPasskey(
         content.push_str("WALLET_WASM_HASH=your_wallet_wasm_hash_here\n");
         content.push_str("WALLET_CONTRACT_ID=your_wallet_contract_id_here\n");
         content.push_str("WALLET_SIGNER_SECRET=your_wallet_signer_secret_here\n");
+        content.push_str("\n");
+        content.push_str("# HTTP transport (set to \"true\" to enable HTTP mode instead of stdio)\n");
+        content.push_str("# USE_HTTP=true\n");
+        content.push_str("# PORT=3000\n");
+        content.push_str("\n");
+        content.push_str("# Rate limiting (requests per minute per IP, HTTP mode only)\n");
+        content.push_str("# RATE_LIMIT=100\n");
+        content.push_str("\n");
+        content.push_str("# CORS (comma-separated origins, or * for all — HTTP mode only)\n");
+        content.push_str("# CORS_ORIGINS=https://myapp.example.com,https://staging.example.com\n");
 
         fs::write(self.output_dir.join(".env.example"), content)?;
 
@@ -1507,6 +1574,27 @@ deployWallet();
         Ok(())
     }
 
+    fn generate_dockerfile(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let content = include_str!("../../templates/Dockerfile.hbs");
+        fs::write(self.output_dir.join("Dockerfile"), content)?;
+        println!("  Generated Dockerfile");
+        Ok(())
+    }
+
+    fn generate_dockerignore(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let content = "node_modules\ndist\n.env\n.env.local\n*.log\n.git\n.DS_Store\n";
+        fs::write(self.output_dir.join(".dockerignore"), content)?;
+        println!("  Generated .dockerignore");
+        Ok(())
+    }
+
+    fn generate_vercel_json(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let content = include_str!("../../templates/vercel.json.hbs");
+        fs::write(self.output_dir.join("vercel.json"), content)?;
+        println!("  Generated vercel.json");
+        Ok(())
+    }
+
     fn generate_readme(
         &self,
         spec: &ContractSpec,
@@ -1621,6 +1709,61 @@ deployWallet();
         content.push_str("# Start server\n");
         content.push_str("pnpm start\n");
         content.push_str("```\n\n");
+
+        // HTTP Transport section
+        content.push_str("## HTTP Transport\n\n");
+        content.push_str("Run as an HTTP server instead of stdio (useful for remote deployments):\n\n");
+        content.push_str("```bash\n");
+        content.push_str("# Start with HTTP transport\n");
+        content.push_str("USE_HTTP=true PORT=3000 pnpm start\n\n");
+        content.push_str("# Or use the convenience script\n");
+        content.push_str("pnpm start:http\n");
+        content.push_str("```\n\n");
+        content.push_str("The HTTP server exposes:\n");
+        content.push_str("- `POST /mcp` — Streamable HTTP MCP endpoint\n");
+        content.push_str("- `GET /health` — Health check\n\n");
+
+        // Rate Limiting section
+        content.push_str("### Rate Limiting\n\n");
+        content.push_str("When running in HTTP mode, requests to `/mcp` are rate-limited per IP address.\n\n");
+        content.push_str("| Variable | Default | Description |\n");
+        content.push_str("|----------|---------|-------------|\n");
+        content.push_str("| `RATE_LIMIT` | `100` | Max requests per IP per 60-second window |\n\n");
+        content.push_str("Exceeding the limit returns HTTP 429 with a `Retry-After` header.\n\n");
+
+        // Docker Deployment section
+        content.push_str("## Docker Deployment\n\n");
+        content.push_str("A `Dockerfile` is included for containerized deployment:\n\n");
+        content.push_str("```bash\n");
+        content.push_str("# Build the image\n");
+        content.push_str(&format!("docker build -t {}-mcp .\n\n", self.contract_name));
+        content.push_str("# Run the container\n");
+        content.push_str(&format!("docker run -d \\\n"));
+        content.push_str("  --name mcp-server \\\n");
+        content.push_str("  -p 3000:3000 \\\n");
+        content.push_str(&format!("  -e CONTRACT_ID={} \\\n", self.contract_id));
+        content.push_str(&format!("  -e RPC_URL={} \\\n", self.network.rpc_url));
+        content.push_str(&format!("  -e NETWORK_PASSPHRASE='{}' \\\n", self.network.network_passphrase));
+        content.push_str("  -e RATE_LIMIT=100 \\\n");
+        content.push_str(&format!("  {}-mcp\n", self.contract_name));
+        content.push_str("```\n\n");
+        content.push_str("The container runs in HTTP mode by default on port 3000 with a built-in health check.\n\n");
+
+        // Vercel Deployment section
+        content.push_str("## Vercel Deployment\n\n");
+        content.push_str("A `vercel.json` is included for serverless deployment:\n\n");
+        content.push_str("1. Install the Vercel CLI: `npm i -g vercel`\n");
+        content.push_str("2. Set environment variables:\n");
+        content.push_str("   ```bash\n");
+        content.push_str(&format!("   vercel env add CONTRACT_ID  # {}\n", self.contract_id));
+        content.push_str(&format!("   vercel env add RPC_URL      # {}\n", self.network.rpc_url));
+        content.push_str("   vercel env add NETWORK_PASSPHRASE\n");
+        content.push_str("   vercel env add USE_HTTP      # true\n");
+        content.push_str("   ```\n");
+        content.push_str("3. Deploy:\n");
+        content.push_str("   ```bash\n");
+        content.push_str("   vercel --prod\n");
+        content.push_str("   ```\n\n");
 
         // Claude Desktop Configuration
         content.push_str("## Claude Desktop Configuration\n\n");

@@ -5,6 +5,7 @@ import {
   DEFAULT_TIMEOUT_MS,
   type MCPClientOptions,
   type CallResult,
+  type SimulateResult,
   type SubmitResult,
   type ToolInfo,
   type ToolMap,
@@ -12,7 +13,7 @@ import {
   type SignerContext,
   type SignAndSubmitOptions,
 } from './types.js';
-import { pollTransaction } from './transaction.js';
+import { pollTransaction, extractFeeFromXdr } from './transaction.js';
 import { logger } from './logger.js';
 
 /** SDK client name sent during MCP initialization handshake */
@@ -145,6 +146,42 @@ export class MCPClient<TTools extends { [K in keyof TTools]: ToolDef } = ToolMap
 
     logger.debug('Tool call result', { toolName, hasXdr: !!result.xdr });
     return result;
+  }
+
+  /**
+   * Simulate a contract call and return a fee preview — without signing or submitting.
+   *
+   * Internally this calls `call()` (which already runs Soroban simulation server-side),
+   * then extracts the estimated fee from the assembled XDR. Use this when you want to
+   * show users the cost before asking them to confirm.
+   *
+   * Full 4-step lifecycle:
+   * ```ts
+   * // 1. Preview
+   * const preview = await client.simulate('deploy-token', { deployer, config });
+   * console.log(`Estimated fee: ${preview.fee} stroops`);
+   *
+   * // 2. Sign & submit (only if user confirms)
+   * const { hash } = await client.signAndSubmit(preview.xdr!, { signer });
+   *
+   * // 3. Confirm
+   * const result = await client.waitForConfirmation(hash);
+   * ```
+   *
+   * For read-only tools `xdr` and `fee` will be undefined — use `simulationResult` for the value.
+   */
+  async simulate<K extends keyof TTools & string>(
+    toolName: K,
+    args: TTools[K]['args'] = {} as TTools[K]['args'],
+  ): Promise<SimulateResult<TTools[K]['result']>> {
+    const result = await this.call(toolName, args);
+    return {
+      xdr: result.xdr,
+      fee: result.xdr
+        ? extractFeeFromXdr(result.xdr, this.options.networkPassphrase)
+        : undefined,
+      simulationResult: result.simulationResult as TTools[K]['result'] | undefined,
+    };
   }
 
   /**

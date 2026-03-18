@@ -195,6 +195,82 @@ npx mcp-generate-types --url http://localhost:3001/mcp --out ./src/mcp-types.ts
 
 ---
 
+## Schema Utilities
+
+Helper functions for building UIs on top of MCP tool definitions. These work on the JSON Schema from `ToolInfo.inputSchema` and are presentation-layer agnostic — equally useful for Telegram bots, React forms, CLIs, or any custom interface.
+
+```ts
+import {
+  extractArgs,
+  buildToolArgs,
+  parseArgValue,
+  isReadOperation,
+  argKey,
+  type ArgDef,
+} from '@stellar-mcp/client';
+```
+
+### `extractArgs(tool)`
+
+Flattens a tool's `inputSchema` into a sorted, display-ready `ArgDef[]`. Handles nested objects (recursively expanded with path tracking), discriminated unions (`oneOf`/`anyOf` with `{ tag: "Value" }` pattern → enum fields), nullable types, and enum fields. Required args come before optional at every level.
+
+```ts
+const args = extractArgs(tool);
+// [{ name: 'deployer', path: ['deployer'], type: 'string', required: true }, ...]
+```
+
+### `buildToolArgs(args, collected)`
+
+Reconstructs the nested args object from a flat key→value map, ready to pass to `client.call()`. Automatically wraps discriminated union values as `{ tag: value }`.
+
+```ts
+const toolArgs = buildToolArgs(args, {
+  deployer: 'GABC...',
+  'config.admin': 'GDEF...',
+  'config.decimals': 7,
+});
+// { deployer: 'GABC...', config: { admin: 'GDEF...', decimals: 7 } }
+```
+
+### `parseArgValue(value, arg)`
+
+Coerces a user-typed string into the correct JS type for the given `ArgDef`.
+
+```ts
+parseArgValue('42', { type: 'number', ... })   // → 42
+parseArgValue('true', { type: 'boolean', ... }) // → true
+parseArgValue('{"a":1}', { type: 'object', ... }) // → { a: 1 }
+parseArgValue('', { type: 'string', nullable: true, ... }) // → null
+```
+
+### `isReadOperation(toolName)`
+
+Heuristic that returns `true` for tool names starting with read-only prefixes (`get`, `list`, `query`, `fetch`, `find`, `search`, `is`, `has`, `check`, `count`, `show`, `view`, `read`).
+
+```ts
+isReadOperation('get-admin')    // true
+isReadOperation('list_tokens')  // true
+isReadOperation('deploy-token') // false
+```
+
+### `ArgDef`
+
+```ts
+interface ArgDef {
+  name: string;
+  path: string[];      // e.g. ['config', 'admin'] for nested fields
+  type: string;        // 'string' | 'number' | 'boolean' | 'object' | 'array' | 'enum' | 'any'
+  description: string;
+  required: boolean;
+  enum?: string[];     // present for enum / discriminated union fields
+  group?: string;      // section header for nested object groups
+  nullable?: boolean;
+  unionTag?: boolean;  // if true, value must be wrapped as { tag: value }
+}
+```
+
+---
+
 ## API Reference
 
 ### `new MCPClient(options)`
@@ -263,6 +339,40 @@ Throws `MCPToolError` if the server returns an error response.
 
 ---
 
+### `client.simulate(toolName, args?)`
+
+Preview a transaction **without signing or submitting**. Returns the assembled XDR and the estimated fee in stroops — useful for showing users the cost before asking them to confirm.
+
+```ts
+const preview = await client.simulate('deploy-token', {
+  deployer: 'GABC...',
+  config: { /* ... */ },
+});
+
+console.log(`Estimated fee: ${preview.fee} stroops`);
+
+// Only sign+submit if the user confirms:
+const { hash } = await client.signAndSubmit(preview.xdr!, {
+  signer: secretKeySigner(process.env.SECRET_KEY!),
+});
+const result = await client.waitForConfirmation(hash);
+```
+
+Returns `SimulateResult<TData>`:
+
+| Field | Type | Description |
+|---|---|---|
+| `xdr` | `string \| undefined` | Assembled transaction XDR, ready to sign |
+| `fee` | `string \| undefined` | Estimated fee in stroops (extracted from XDR) |
+| `simulationResult` | `TData \| undefined` | Decoded return value (for read-only tools, this is the answer) |
+
+For **read-only tools** (`get-admin`, `get-token-count`, etc.) `xdr` and `fee` are `undefined` — use `simulationResult` for the value.
+
+This completes the full 4-step Soroban lifecycle originally specified:
+> **simulate → inspect → signAndSubmit → waitForConfirmation**
+
+---
+
 ### `client.signAndSubmit(xdr, options)`
 
 Sign and submit a transaction using a signer adapter.
@@ -309,6 +419,8 @@ Signers are pluggable adapters that implement the `Signer` interface. Pass one t
 ### `secretKeySigner(secretKey)` — Node.js & server-side
 
 Delegates signing and submission to the MCP server's built-in `sign-and-submit` tool. The server handles auth entry signing, fresh sequence numbers, and LaunchTube submission. The secret key is passed per-request and never stored.
+
+> **Security note:** `secretKeySigner` transmits the secret key to the MCP server's `sign-and-submit` tool. Only use this with trusted, local, or TLS-secured servers. For untrusted servers, prefer `connectFreighter()` which signs client-side.
 
 ```ts
 import { secretKeySigner } from '@stellar-mcp/client';
@@ -514,7 +626,7 @@ MCP_URL=http://localhost:3001/mcp \
 ```bash
 npm run build          # compile to dist/
 npm run dev            # watch mode
-npm test               # unit tests (40 tests, no server required)
+npm test               # unit tests (90 tests, no server required)
 npm run lint           # ESLint
 npm run format         # Prettier --write
 npm run format:check   # Prettier --check (used in CI)

@@ -1,0 +1,6 @@
+.yalc/
+yalc.lock
+node_modules/
+.env
+dist/
+src/mcp-types.ts

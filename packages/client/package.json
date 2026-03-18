@@ -1,6 +1,6 @@
 {
   "name": "@stellar-mcp/client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Type-safe programmatic client for Stellar MCP servers — discover tools, call contracts, sign and submit transactions",
   "type": "module",
   "exports": {
@@ -89,5 +89,15 @@
     "blockchain",
     "web3"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "author": "Jose Toscano",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoseCToscano/stellar-mcp.git",
+    "directory": "packages/client"
+  },
+  "homepage": "https://github.com/JoseCToscano/stellar-mcp/tree/main/packages/client#readme",
+  "bugs": {
+    "url": "https://github.com/JoseCToscano/stellar-mcp/issues"
+  }
 }
