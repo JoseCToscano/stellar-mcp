@@ -90,6 +90,7 @@ impl<'a> McpGenerator<'a> {
         self.generate_tsconfig()?;
         self.generate_env_example(args)?;
         self.generate_dockerfile()?;
+        self.generate_dockerignore()?;
         self.generate_vercel_json()?;
         self.generate_readme(spec, args)?;
 
@@ -1561,6 +1562,13 @@ deployWallet();
         Ok(())
     }
 
+    fn generate_dockerignore(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let content = "node_modules\ndist\n.env\n.env.local\n*.log\n.git\n.DS_Store\n";
+        fs::write(self.output_dir.join(".dockerignore"), content)?;
+        println!("  Generated .dockerignore");
+        Ok(())
+    }
+
     fn generate_vercel_json(&self) -> Result<(), Box<dyn std::error::Error>> {
         let content = include_str!("../../templates/vercel.json.hbs");
         fs::write(self.output_dir.join("vercel.json"), content)?;
@@ -1682,6 +1690,61 @@ deployWallet();
         content.push_str("# Start server\n");
         content.push_str("pnpm start\n");
         content.push_str("```\n\n");
+
+        // HTTP Transport section
+        content.push_str("## HTTP Transport\n\n");
+        content.push_str("Run as an HTTP server instead of stdio (useful for remote deployments):\n\n");
+        content.push_str("```bash\n");
+        content.push_str("# Start with HTTP transport\n");
+        content.push_str("USE_HTTP=true PORT=3000 pnpm start\n\n");
+        content.push_str("# Or use the convenience script\n");
+        content.push_str("pnpm start:http\n");
+        content.push_str("```\n\n");
+        content.push_str("The HTTP server exposes:\n");
+        content.push_str("- `POST /mcp` — Streamable HTTP MCP endpoint\n");
+        content.push_str("- `GET /health` — Health check\n\n");
+
+        // Rate Limiting section
+        content.push_str("### Rate Limiting\n\n");
+        content.push_str("When running in HTTP mode, requests to `/mcp` are rate-limited per IP address.\n\n");
+        content.push_str("| Variable | Default | Description |\n");
+        content.push_str("|----------|---------|-------------|\n");
+        content.push_str("| `RATE_LIMIT` | `100` | Max requests per IP per 60-second window |\n\n");
+        content.push_str("Exceeding the limit returns HTTP 429 with a `Retry-After` header.\n\n");
+
+        // Docker Deployment section
+        content.push_str("## Docker Deployment\n\n");
+        content.push_str("A `Dockerfile` is included for containerized deployment:\n\n");
+        content.push_str("```bash\n");
+        content.push_str("# Build the image\n");
+        content.push_str(&format!("docker build -t {}-mcp .\n\n", self.contract_name));
+        content.push_str("# Run the container\n");
+        content.push_str(&format!("docker run -d \\\n"));
+        content.push_str("  --name mcp-server \\\n");
+        content.push_str("  -p 3000:3000 \\\n");
+        content.push_str(&format!("  -e CONTRACT_ID={} \\\n", self.contract_id));
+        content.push_str(&format!("  -e RPC_URL={} \\\n", self.network.rpc_url));
+        content.push_str(&format!("  -e NETWORK_PASSPHRASE='{}' \\\n", self.network.network_passphrase));
+        content.push_str("  -e RATE_LIMIT=100 \\\n");
+        content.push_str(&format!("  {}-mcp\n", self.contract_name));
+        content.push_str("```\n\n");
+        content.push_str("The container runs in HTTP mode by default on port 3000 with a built-in health check.\n\n");
+
+        // Vercel Deployment section
+        content.push_str("## Vercel Deployment\n\n");
+        content.push_str("A `vercel.json` is included for serverless deployment:\n\n");
+        content.push_str("1. Install the Vercel CLI: `npm i -g vercel`\n");
+        content.push_str("2. Set environment variables:\n");
+        content.push_str("   ```bash\n");
+        content.push_str(&format!("   vercel env add CONTRACT_ID  # {}\n", self.contract_id));
+        content.push_str(&format!("   vercel env add RPC_URL      # {}\n", self.network.rpc_url));
+        content.push_str("   vercel env add NETWORK_PASSPHRASE\n");
+        content.push_str("   vercel env add USE_HTTP      # true\n");
+        content.push_str("   ```\n");
+        content.push_str("3. Deploy:\n");
+        content.push_str("   ```bash\n");
+        content.push_str("   vercel --prod\n");
+        content.push_str("   ```\n\n");
 
         // Claude Desktop Configuration
         content.push_str("## Claude Desktop Configuration\n\n");

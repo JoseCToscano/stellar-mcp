@@ -263,3 +263,60 @@ fn test_python_generator_writes_dockerfile() {
     assert!(source.contains("\"Dockerfile\""),
         "Python generator should write to 'Dockerfile'");
 }
+
+#[test]
+fn test_typescript_generator_writes_dockerignore() {
+    let source = fs::read_to_string("src/generator/mcp_generator.rs")
+        .expect("Failed to read mcp_generator.rs");
+
+    assert!(source.contains("generate_dockerignore"),
+        "TypeScript generator should have generate_dockerignore method");
+    assert!(source.contains(".dockerignore"),
+        "TypeScript generator should write .dockerignore");
+}
+
+#[test]
+fn test_python_generator_writes_dockerignore() {
+    let source = fs::read_to_string("src/generator/python_generator.rs")
+        .expect("Failed to read python_generator.rs");
+
+    assert!(source.contains("generate_dockerignore"),
+        "Python generator should have generate_dockerignore method");
+    assert!(source.contains(".dockerignore"),
+        "Python generator should write .dockerignore");
+}
+
+#[test]
+fn test_generated_readme_has_docker_section() {
+    let source = fs::read_to_string("src/generator/mcp_generator.rs")
+        .expect("Failed to read mcp_generator.rs");
+
+    assert!(source.contains("Docker Deployment"),
+        "Generated README should include Docker Deployment section");
+    assert!(source.contains("docker build"),
+        "Generated README should include docker build command");
+    assert!(source.contains("docker run"),
+        "Generated README should include docker run command");
+}
+
+#[test]
+fn test_generated_readme_has_vercel_section() {
+    let source = fs::read_to_string("src/generator/mcp_generator.rs")
+        .expect("Failed to read mcp_generator.rs");
+
+    assert!(source.contains("Vercel Deployment"),
+        "Generated README should include Vercel Deployment section");
+    assert!(source.contains("vercel --prod"),
+        "Generated README should include vercel deploy command");
+}
+
+#[test]
+fn test_generated_readme_has_rate_limiting_section() {
+    let source = fs::read_to_string("src/generator/mcp_generator.rs")
+        .expect("Failed to read mcp_generator.rs");
+
+    assert!(source.contains("Rate Limiting"),
+        "Generated README should include Rate Limiting section");
+    assert!(source.contains("RATE_LIMIT"),
+        "Generated README should document RATE_LIMIT env var");
+}
