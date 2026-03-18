@@ -18,8 +18,8 @@ importers:
         specifier: ^1.24.3
         version: 1.27.1(zod@3.25.76)
       '@stellar-mcp/client':
-        specifier: ^0.1.1
-        version: 0.1.1(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(@stellar/stellar-sdk@14.6.1)
+        specifier: ^0.2.0
+        version: 0.2.0(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(@stellar/stellar-sdk@14.6.1)
       '@stellar/stellar-sdk':
         specifier: ^14.0.0
         version: 14.6.1
@@ -276,8 +276,8 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@stellar-mcp/client@0.1.1':
-    resolution: {integrity: sha512-viWBUkDAn/+AMiwobNrZRKF/XDvKFwmQMZnIdLH5E9XD50x/NjfQDgWT3Dq7tE3kFdIYpV7wHtmsRT433qfYEQ==}
+  '@stellar-mcp/client@0.2.0':
+    resolution: {integrity: sha512-DSVM3rClCPPs2XxC9Jwq/nB+NLimm7YUEdCJo+WXGBwyb+PAyl2R4mvO3SP6toinkVz7enVKZA+MderWwTIptA==}
     engines: {node: '>=18'}
     hasBin: true
     peerDependencies:
@@ -1097,7 +1097,7 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@stellar-mcp/client@0.1.1(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(@stellar/stellar-sdk@14.6.1)':
+  '@stellar-mcp/client@0.2.0(@modelcontextprotocol/sdk@1.27.1(zod@3.25.76))(@stellar/stellar-sdk@14.6.1)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.27.1(zod@3.25.76)
       '@stellar/stellar-sdk': 14.6.1
