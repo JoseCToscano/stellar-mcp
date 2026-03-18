@@ -14,14 +14,20 @@ pnpm install
 cp .env.example .env
 # Edit .env: set MCP_SERVER_URL to your running MCP server
 
-# 3. Start your MCP server (in another terminal)
+# 3. Build and install the binary globally
+pnpm build
+npm install -g .
+
+# 4. Start your MCP server (in another terminal)
 #    e.g. node path/to/generated-server/dist/index.js
 
-# 4. Run
-pnpm dev                  # guided wizard
-pnpm dev list             # list available tools
-pnpm dev call get-admin   # call a specific tool
+# 5. Run
+stellar-mcp-cli               # guided wizard
+stellar-mcp-cli list          # list available tools
+stellar-mcp-cli call get-admin  # call a specific tool
 ```
+
+> **During development** you can skip the build step and use `pnpm dev` instead of `stellar-mcp-cli`.
 
 ---
 
@@ -46,19 +52,19 @@ pnpm dev call get-admin   # call a specific tool
 
 ```bash
 # Read operation
-pnpm dev call get-admin
+stellar-mcp-cli call get-admin
 
 # Read with inline flag args
-pnpm dev call get-balance --address GABC1234...
+stellar-mcp-cli call get-balance --address GABC1234...
 
 # Write with JSON args
-pnpm dev call deploy-token --args '{"deployer":"GABC...","config":{"admin":"GABC...","decimals":7,"name":"MyToken","symbol":"MTK"}}'
+stellar-mcp-cli call deploy-token --args '{"deployer":"GABC...","config":{"admin":"GABC...","decimals":7,"name":"MyToken","symbol":"MTK"}}'
 
 # Write with flag args
-pnpm dev call transfer --to GABC... --amount 100
+stellar-mcp-cli call transfer --to GABC... --amount 100
 
 # Pipe list output to jq
-pnpm dev list --json | jq '.[].name'
+stellar-mcp-cli list --json | jq '.[].name'
 ```
 
 ---
@@ -112,14 +118,9 @@ Goodbye!
 All commands support `--json` for machine-readable output:
 
 ```bash
-# List tools as JSON
-pnpm dev list --json
-
-# Call result as JSON
-pnpm dev call get-admin --json
-
-# Pipe to jq
-pnpm dev call get-deployed-tokens --json | jq '.[]'
+stellar-mcp-cli list --json
+stellar-mcp-cli call get-admin --json
+stellar-mcp-cli call get-deployed-tokens --json | jq '.[]'
 ```
 
 In `--json` mode:
@@ -140,22 +141,6 @@ In `--json` mode:
 | `SIGNER_SECRET` | No | — | Secret key (`S...`) for signing write operations |
 
 When `SIGNER_SECRET` is not set, write operations display the unsigned XDR instead of submitting. This is useful for inspecting transactions before signing.
-
----
-
-## Building for Distribution
-
-```bash
-pnpm build                    # compiles src/ → dist/
-node dist/index.js list       # run compiled output
-```
-
-After building, you can install the binary globally:
-
-```bash
-npm install -g .              # installs stellar-mcp-cli to PATH
-stellar-mcp-cli list
-```
 
 ---
 
