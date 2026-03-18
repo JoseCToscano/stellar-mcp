@@ -89,6 +89,8 @@ impl<'a> McpGenerator<'a> {
         self.generate_package_json(args)?;
         self.generate_tsconfig()?;
         self.generate_env_example(args)?;
+        self.generate_dockerfile()?;
+        self.generate_vercel_json()?;
         self.generate_readme(spec, args)?;
 
         Ok(())
@@ -483,6 +485,27 @@ impl<'a> McpGenerator<'a> {
         content.push_str("  if (useHttp) {\n");
         content.push_str("    // HTTP mode with StreamableHTTP transport - STATELESS mode\n");
         content.push_str("    // Each request creates a new server/transport pair\n");
+        content.push_str("    const RATE_LIMIT = parseInt(process.env.RATE_LIMIT ?? '100', 10);\n");
+        content.push_str("    const windowMs = 60_000;\n");
+        content.push_str("    const ipWindows = new Map<string, { count: number; resetAt: number }>();\n\n");
+        content.push_str("    function consumeRateLimit(ip: string): boolean {\n");
+        content.push_str("      const now = Date.now();\n");
+        content.push_str("      const entry = ipWindows.get(ip);\n");
+        content.push_str("      if (!entry || now >= entry.resetAt) {\n");
+        content.push_str("        ipWindows.set(ip, { count: 1, resetAt: now + windowMs });\n");
+        content.push_str("        return true;\n");
+        content.push_str("      }\n");
+        content.push_str("      if (entry.count >= RATE_LIMIT) return false;\n");
+        content.push_str("      entry.count++;\n");
+        content.push_str("      return true;\n");
+        content.push_str("    }\n\n");
+        content.push_str("    // Clean up stale rate-limit entries every 5 minutes\n");
+        content.push_str("    setInterval(() => {\n");
+        content.push_str("      const now = Date.now();\n");
+        content.push_str("      for (const [ip, entry] of ipWindows) {\n");
+        content.push_str("        if (now >= entry.resetAt) ipWindows.delete(ip);\n");
+        content.push_str("      }\n");
+        content.push_str("    }, 5 * 60_000);\n\n");
         content.push_str("    const app = express();\n");
         content.push_str("    app.use(cors({\n");
         content.push_str("      origin: '*',\n");
@@ -492,8 +515,24 @@ impl<'a> McpGenerator<'a> {
         content.push_str("    }));\n");
         content.push_str("    app.use(express.json());\n\n");
 
+        content.push_str("    // Health check — always accessible, not rate limited\n");
         content.push_str("    app.get('/health', (_req, res) => {\n");
         content.push_str("      res.json({ status: 'ok' });\n");
+        content.push_str("    });\n\n");
+
+        content.push_str("    // Rate limiting middleware for MCP endpoints\n");
+        content.push_str("    app.use('/mcp', (req, res, next) => {\n");
+        content.push_str("      const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';\n");
+        content.push_str("      if (!consumeRateLimit(ip)) {\n");
+        content.push_str("        res.writeHead(429, {\n");
+        content.push_str("          'Content-Type': 'application/json',\n");
+        content.push_str("          'Retry-After': '60',\n");
+        content.push_str("          'X-RateLimit-Limit': String(RATE_LIMIT),\n");
+        content.push_str("        });\n");
+        content.push_str("        res.end(JSON.stringify({ error: 'Too Many Requests', retryAfter: 60 }));\n");
+        content.push_str("        return;\n");
+        content.push_str("      }\n");
+        content.push_str("      next();\n");
         content.push_str("    });\n\n");
 
         // POST endpoint - handles all MCP requests in stateless mode
@@ -544,6 +583,7 @@ impl<'a> McpGenerator<'a> {
         content.push_str("    app.listen(port, () => {\n");
         content.push_str(&format!("      console.error('{}-mcp MCP server running on HTTP port', port);\n", self.server_name));
         content.push_str("      console.error('Mode: STATELESS (no sessions)');\n");
+        content.push_str("      console.error('Rate limit: ' + RATE_LIMIT + ' req/min per IP');\n");
         content.push_str("      console.error('Health check: http://localhost:' + port + '/health');\n");
         content.push_str("      console.error('MCP endpoint: http://localhost:' + port + '/mcp');\n");
         content.push_str("    });\n");
@@ -1289,7 +1329,7 @@ export async function signAndSendWithPasskey(
     fn generate_package_json(&self, _args: &GenerateArgs) -> Result<(), Box<dyn std::error::Error>> {
         let deps = serde_json::json!({
             "@modelcontextprotocol/sdk": "^1.24.3",
-            "@stellar/stellar-sdk": "^14.0.0",
+            "@stellar/stellar-sdk": "~14.4.0",
             "zod": "^3.23.0",
             "dotenv": "^16.4.0",
             "passkey-kit": "^0.10.19",
@@ -1383,6 +1423,13 @@ export async function signAndSendWithPasskey(
         content.push_str("WALLET_WASM_HASH=your_wallet_wasm_hash_here\n");
         content.push_str("WALLET_CONTRACT_ID=your_wallet_contract_id_here\n");
         content.push_str("WALLET_SIGNER_SECRET=your_wallet_signer_secret_here\n");
+        content.push_str("\n");
+        content.push_str("# HTTP transport (set to \"true\" to enable HTTP mode instead of stdio)\n");
+        content.push_str("# USE_HTTP=true\n");
+        content.push_str("# PORT=3000\n");
+        content.push_str("\n");
+        content.push_str("# Rate limiting (requests per minute per IP, HTTP mode only)\n");
+        content.push_str("# RATE_LIMIT=100\n");
 
         fs::write(self.output_dir.join(".env.example"), content)?;
 
@@ -1504,6 +1551,20 @@ deployWallet();
 
         fs::write(self.output_dir.join("deploy-wallet.ts"), content)?;
         println!("  Generated deploy-wallet.ts");
+        Ok(())
+    }
+
+    fn generate_dockerfile(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let content = include_str!("../../templates/Dockerfile.hbs");
+        fs::write(self.output_dir.join("Dockerfile"), content)?;
+        println!("  Generated Dockerfile");
+        Ok(())
+    }
+
+    fn generate_vercel_json(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let content = include_str!("../../templates/vercel.json.hbs");
+        fs::write(self.output_dir.join("vercel.json"), content)?;
+        println!("  Generated vercel.json");
         Ok(())
     }
 

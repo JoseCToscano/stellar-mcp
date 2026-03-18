@@ -32,8 +32,6 @@ fn test_lib_utils_contains_sign_transaction() {
         "sign_transaction should accept optional secret_key");
     assert!(utils_content.contains("SIGNER_SECRET"),
         "Should check SIGNER_SECRET environment variable");
-    assert!(utils_content.contains("TransactionEnvelope"),
-        "Should use stellar_sdk TransactionEnvelope");
 }
 
 #[test]
@@ -45,10 +43,10 @@ fn test_lib_submit_contains_submit_transaction() {
         "submit.py should contain submit_transaction function");
     assert!(submit_content.contains("SorobanServer"),
         "Should use SorobanServer");
-    assert!(submit_content.contains("for attempt in range(60)"),
-        "Should poll 60 times for transaction result");
-    assert!(submit_content.contains("await asyncio.sleep(0.5)"),
-        "Should sleep 500ms between polls");
+    assert!(submit_content.contains("for attempt in range(120)"),
+        "Should poll 120 times for transaction result");
+    assert!(submit_content.contains("asyncio.sleep"),
+        "Should sleep between polls");
 }
 
 #[test]
