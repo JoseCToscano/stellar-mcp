@@ -1,6 +1,6 @@
 // src/commands/call.ts
 //
-// Implements: stellar-mcp call [tool] [--args json] [--json] [--key val…]
+// Implements: stellar-mcp-cli call [tool] [--args json] [--json] [--key val…]
 //
 // Three input modes:
 //   A) --args <json>     → parse JSON, call directly

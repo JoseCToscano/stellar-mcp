@@ -4,7 +4,7 @@
   "description": "Terminal agent for Stellar MCP servers",
   "private": true,
   "type": "module",
-  "bin": { "stellar-mcp": "dist/index.js" },
+  "bin": { "stellar-mcp-cli": "dist/index.js" },
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",

@@ -7,20 +7,17 @@ A polished terminal agent for any Stellar MCP server. Copy this template, config
 ## Quick Start
 
 ```bash
-# 1. Clone / copy this template
-cp -r templates/cli-agent my-cli && cd my-cli
-
-# 2. Install dependencies
+# 1. Install dependencies
 pnpm install
 
-# 3. Configure environment
+# 2. Configure environment
 cp .env.example .env
 # Edit .env: set MCP_SERVER_URL to your running MCP server
 
-# 4. Start your MCP server (in another terminal)
+# 3. Start your MCP server (in another terminal)
 #    e.g. node path/to/generated-server/dist/index.js
 
-# 5. Run
+# 4. Run
 pnpm dev                  # guided wizard
 pnpm dev list             # list available tools
 pnpm dev call get-admin   # call a specific tool
@@ -32,16 +29,16 @@ pnpm dev call get-admin   # call a specific tool
 
 | Command | Description |
 |---|---|
-| `stellar-mcp` | Guided wizard: tool picker → args → confirm → execute |
-| `stellar-mcp --interactive` | REPL loop — asks "Run another?" after each op |
-| `stellar-mcp list` | Pretty table of all tools with READ / WRITE sections |
-| `stellar-mcp list --json` | JSON array to stdout (pipe-friendly) |
-| `stellar-mcp list --read-only` | Only read tools |
-| `stellar-mcp list --write-only` | Only write tools |
-| `stellar-mcp call [tool]` | Call a tool (omit name to pick interactively) |
-| `stellar-mcp call [tool] --args <json>` | Pass all args as a JSON object |
-| `stellar-mcp call [tool] --key val …` | Pass args as `--key value` flags |
-| `stellar-mcp call [tool] --json` | Output result as JSON |
+| `stellar-mcp-cli` | Guided wizard: tool picker → args → confirm → execute |
+| `stellar-mcp-cli --interactive` | REPL loop — asks "Run another?" after each op |
+| `stellar-mcp-cli list` | Pretty table of all tools with READ / WRITE sections |
+| `stellar-mcp-cli list --json` | JSON array to stdout (pipe-friendly) |
+| `stellar-mcp-cli list --read-only` | Only read tools |
+| `stellar-mcp-cli list --write-only` | Only write tools |
+| `stellar-mcp-cli call [tool]` | Call a tool (omit name to pick interactively) |
+| `stellar-mcp-cli call [tool] --args <json>` | Pass all args as a JSON object |
+| `stellar-mcp-cli call [tool] --key val …` | Pass args as `--key value` flags |
+| `stellar-mcp-cli call [tool] --json` | Output result as JSON |
 
 ---
 
@@ -68,7 +65,7 @@ pnpm dev list --json | jq '.[].name'
 
 ## Interactive Mode
 
-Running `stellar-mcp` with no arguments launches the wizard:
+Running `stellar-mcp-cli` with no arguments launches the wizard:
 
 ```
 ◆ Stellar MCP
@@ -94,7 +91,7 @@ Running `stellar-mcp` with no arguments launches the wizard:
 ◆ Done
 ```
 
-With `--interactive` (`stellar-mcp --interactive`), the wizard repeats after each operation:
+With `--interactive` (`stellar-mcp-cli --interactive`), the wizard repeats after each operation:
 
 ```
 ◆ Stellar MCP  (Ctrl+C to exit)
@@ -149,21 +146,19 @@ When `SIGNER_SECRET` is not set, write operations display the unsigned XDR inste
 ## Building for Distribution
 
 ```bash
-pnpm build                 # compiles src/ → dist/
-node dist/index.js list    # run compiled output
+pnpm build                    # compiles src/ → dist/
+node dist/index.js list       # run compiled output
 ```
 
 After building, you can install the binary globally:
 
 ```bash
-npm install -g .           # installs stellar-mcp to PATH
-stellar-mcp list
+npm install -g .              # installs stellar-mcp-cli to PATH
+stellar-mcp-cli list
 ```
 
 ---
 
 ## Notes
-
-**Binary name:** This template uses `stellar-mcp`. The original spec mentions `stellar-agent` as the binary name — check with Jose if you need to rename it (just update the `bin` field in `package.json` and the `name` in `index.ts`).
 
 **Write operations:** Soroban simulates all contract calls, so even read-only tools return XDR. This CLI uses the tool name heuristic (tools starting with `get`, `list`, `query`, etc. are treated as reads) to determine whether to sign and submit. Override by always passing `SIGNER_SECRET` and letting the flow proceed naturally.

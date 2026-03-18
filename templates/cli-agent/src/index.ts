@@ -4,10 +4,10 @@
 // Commander entry point for the Stellar MCP CLI.
 //
 // Usage:
-//   stellar-mcp                       → guided wizard (tool picker → args → execute)
-//   stellar-mcp --interactive         → REPL loop that keeps running after each op
-//   stellar-mcp list [--json] [--read-only] [--write-only]
-//   stellar-mcp call [tool] [--args json] [--json] [--key val…]
+//   stellar-mcp-cli                       → guided wizard (tool picker → args → execute)
+//   stellar-mcp-cli --interactive         → REPL loop that keeps running after each op
+//   stellar-mcp-cli list [--json] [--read-only] [--write-only]
+//   stellar-mcp-cli call [tool] [--args json] [--json] [--key val…]
 
 import { Command } from '@commander-js/extra-typings';
 import { handleList } from './commands/list.js';
@@ -15,7 +15,7 @@ import { handleCall } from './commands/call.js';
 import { runWizard, runInteractive } from './interactive.js';
 
 const program = new Command()
-  .name('stellar-mcp')
+  .name('stellar-mcp-cli')
   .description('Terminal agent for Stellar MCP servers')
   .version('0.1.0')
   .option('-i, --interactive', 'Stay in interactive mode after each operation');
