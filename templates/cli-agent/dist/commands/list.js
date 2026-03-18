@@ -1,6 +1,6 @@
 // src/commands/list.ts
 //
-// Implements: stellar-mcp list [--json] [--read-only] [--write-only]
+// Implements: stellar-mcp-cli list [--json] [--read-only] [--write-only]
 //
 // Fetches the tool list from the MCP server and displays it as a
 // formatted table (default) or raw JSON (--json).
