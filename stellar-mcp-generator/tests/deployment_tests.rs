@@ -195,6 +195,39 @@ fn test_rate_limit_cleanup() {
         "Should clean up stale entries");
 }
 
+// ── Python Rate Limiting ─────────────────────────────────────────────────────
+
+#[test]
+fn test_python_server_template_has_rate_limiting() {
+    let content = fs::read_to_string("templates/python/server.py.hbs")
+        .expect("Failed to read server.py.hbs");
+
+    assert!(content.contains("RATE_LIMIT"),
+        "Python server should reference RATE_LIMIT env var");
+    assert!(content.contains("_RateLimitedApp"),
+        "Python server should have RateLimitedApp ASGI middleware");
+}
+
+#[test]
+fn test_python_rate_limit_429_response() {
+    let content = fs::read_to_string("templates/python/server.py.hbs")
+        .expect("Failed to read server.py.hbs");
+
+    assert!(content.contains("429"),
+        "Python server should respond with HTTP 429 when limit exceeded");
+    assert!(content.contains("retry-after"),
+        "Python server should include retry-after header");
+}
+
+#[test]
+fn test_python_rate_limit_only_mcp_endpoint() {
+    let content = fs::read_to_string("templates/python/server.py.hbs")
+        .expect("Failed to read server.py.hbs");
+
+    assert!(content.contains("startswith(\"/mcp\")"),
+        "Python rate limiter should only apply to /mcp endpoint");
+}
+
 // ── .env.example includes rate limiting ──────────────────────────────────────
 
 #[test]
