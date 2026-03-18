@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx scripts/dev.ts",
+    "start": "tsx scripts/dev.ts",
     "setup": "tsx scripts/setup.ts",
     "typecheck": "tsc --noEmit"
   },
