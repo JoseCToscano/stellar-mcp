@@ -1,5 +1,8 @@
+import 'dotenv/config';
+import * as http from 'http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import * as tools from './tools/{{contract_name}}.js';
 {{#if with_launchtube}}
@@ -11,128 +14,321 @@ import { signAndSendWithPasskey } from './lib/passkey.js';
 import { submitTransaction } from './lib/submit.js';
 import { signTransaction } from './lib/utils.js';
 
-// Configuration from environment
-const CONTRACT_ID = process.env.CONTRACT_ID || '{{contract_id}}';
-const RPC_URL = process.env.RPC_URL || '{{rpc_url}}';
-const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || '{{network_passphrase}}';
+// ─── Configuration ────────────────────────────────────────────────────────────
 
-// Helper to serialize BigInt values (Soroban uses i128/u128 which become BigInt in JS)
-const jsonStringify = (obj: unknown, space?: number): string => {
-  return JSON.stringify(obj, (_, value) =>
-    typeof value === 'bigint' ? value.toString() : value, space);
-};
+const CONTRACT_ID        = process.env.CONTRACT_ID        ?? '{{contract_id}}';
+const RPC_URL            = process.env.RPC_URL            ?? '{{rpc_url}}';
+const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE ?? '{{network_passphrase}}';
+const PORT               = parseInt(process.env.PORT       ?? '3000', 10);
+const USE_HTTP           = process.env.USE_HTTP?.toLowerCase() === 'true';
+const CORS_ORIGINS       = (process.env.CORS_ORIGINS ?? '*').split(',').map(s => s.trim());
+const RATE_LIMIT         = parseInt(process.env.RATE_LIMIT ?? '100', 10);
+const MAX_BODY_BYTES     = 1_048_576; // 1 MB
 
-// Initialize MCP server
-const server = new McpServer({
-  name: '{{server_name}}-mcp',
-  version: '1.0.0',
-});
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-{{#each functions}}
-// Tool: {{name}}
-server.tool(
-  '{{name_kebab}}',
-  '{{doc}}',
-  {{#if has_inputs}}
-  {
-    {{#each inputs}}
-    {{name}}: {{{zod_type}}}.describe('{{doc}}'),
-    {{/each}}
-  },
-  {{else}}
-  {},
-  {{/if}}
-  async (params) => {
-    try {
-      const result = await tools.{{name}}(params, {
-        contractId: CONTRACT_ID,
-        rpcUrl: RPC_URL,
-        networkPassphrase: NETWORK_PASSPHRASE,
-      });
+/** Serialize BigInt values — Soroban uses i128/u128 which become BigInt in JS */
+const jsonStringify = (obj: unknown, space?: number): string =>
+  JSON.stringify(obj, (_, v) => (typeof v === 'bigint' ? v.toString() : v), space);
 
-      return {
-        content: [{
-          type: 'text',
-          text: jsonStringify(result, 2),
-        }],
-      };
-    } catch (error) {
-      return {
-        content: [{
-          type: 'text',
-          text: jsonStringify({
-            error: 'Tool execution failed',
-            message: error instanceof Error ? error.message : 'Unknown error',
-          }),
-        }],
-      };
-    }
-  }
-);
+// ─── Server factory ───────────────────────────────────────────────────────────
+//
+// Returns a fully-configured McpServer with all tools registered.
+// Called once for stdio mode, or once per HTTP request for stateless HTTP mode.
 
-{{/each}}
-// Tool: sign-and-submit
-server.tool(
-  'sign-and-submit',
-  'Sign a transaction XDR and submit to the network. Use walletContractId for passkey smart wallet signing (requires WALLET_SIGNER_SECRET env var), or secretKey for regular keypair signing. secretKey is always required as fee payer.',
-  {
-    xdr: z.string().describe('Transaction XDR to sign and submit'),
-    secretKey: z.string().optional().describe('Secret key for signing. For passkey flow, this becomes the fee payer secret.'),
-    walletContractId: z.string().optional().describe('Smart wallet contract ID for passkey signing (uses WALLET_SIGNER_SECRET from env, secretKey as fee payer)'),
-  },
-  async ({ xdr, secretKey, walletContractId }) => {
-    try {
-      if (!secretKey) {
-        throw new Error('Either secretKey (for regular signing) or walletContractId (for passkey signing) is required');
-      }
+function createServer(): McpServer {
+  const server = new McpServer({
+    name: '{{server_name}}-mcp',
+    version: '1.0.0',
+  });
 
-      {{#if with_passkey}}
-      // Use passkey signing if walletContractId is provided
-      if (walletContractId) {
-        // Passkey signing uses WALLET_SIGNER_SECRET from env for auth, secretKey as fee payer
-        const result = await signAndSendWithPasskey(xdr, walletContractId, secretKey);
+  {{#each functions}}
+  server.tool(
+    '{{name_kebab}}',
+    '{{doc}}',
+    {{#if has_inputs}}
+    {
+      {{#each inputs}}
+      {{name}}: {{{zod_type}}}.describe('{{doc}}'),
+      {{/each}}
+    },
+    {{else}}
+    {},
+    {{/if}}
+    async (params) => {
+      try {
+        const result = await tools.{{name}}(params, {
+          contractId: CONTRACT_ID,
+          rpcUrl: RPC_URL,
+          networkPassphrase: NETWORK_PASSPHRASE,
+        });
+        return { content: [{ type: 'text', text: jsonStringify(result, 2) }] };
+      } catch (error) {
         return {
           content: [{
             type: 'text',
-            text: jsonStringify({ success: true, result }),
+            text: jsonStringify({
+              error: 'Tool execution failed',
+              message: error instanceof Error ? error.message : 'Unknown error',
+            }),
           }],
         };
       }
-      {{/if}}
+    },
+  );
 
-      {{#if with_launchtube}}
-      // Use LaunchTube for submission (with keypair signing)
-      const result = await submitToLaunchtube(xdr, { secretKey });
-      {{else}}
-      // Regular signing: signAuthEntries + sign envelope + submit
-      const signedXdr = await signTransaction(xdr, secretKey);
-      const result = await submitTransaction(signedXdr);
-      {{/if}}
+  {{/each}}
+  server.tool(
+    'sign-and-submit',
+    'Sign a transaction XDR and submit to the network. Use walletContractId for passkey smart wallet signing (requires WALLET_SIGNER_SECRET env var), or secretKey for regular keypair signing.',
+    {
+      xdr: z.string().describe('Transaction XDR to sign and submit'),
+      secretKey: z.string().optional().describe('Secret key for signing. For passkey flow, this becomes the fee payer secret.'),
+      walletContractId: z.string().optional().describe('Smart wallet contract ID for passkey signing'),
+    },
+    async ({ xdr, secretKey, walletContractId }) => {
+      try {
+        if (!secretKey) {
+          throw new Error('secretKey is required');
+        }
+
+        {{#if with_passkey}}
+        if (walletContractId) {
+          const result = await signAndSendWithPasskey(xdr, walletContractId, secretKey);
+          return { content: [{ type: 'text', text: jsonStringify({ success: true, result }) }] };
+        }
+        {{/if}}
+
+        {{#if with_launchtube}}
+        const result = await submitToLaunchtube(xdr, { secretKey });
+        {{else}}
+        const signedXdr = await signTransaction(xdr, secretKey);
+        const result = await submitTransaction(signedXdr);
+        {{/if}}
+        return { content: [{ type: 'text', text: jsonStringify({ success: true, result }) }] };
+      } catch (error) {
+        return {
+          content: [{
+            type: 'text',
+            text: jsonStringify({
+              error: 'Submission failed',
+              message: error instanceof Error ? error.message : 'Unknown error',
+            }),
+          }],
+        };
+      }
+    },
+  );
+
+  server.tool(
+    'prepare-transaction',
+    'Re-simulate a transaction with a specific wallet address so the wallet can sign it.',
+    {
+      xdr: z.string().describe('Transaction XDR from a contract call'),
+      walletAddress: z.string().describe('Wallet public key (G...) to prepare for'),
+    },
+    async ({ xdr, walletAddress }) => {
+      try {
+        const { prepareTransaction } = await import('./lib/utils.js');
+        const result = await prepareTransaction(xdr, walletAddress, {
+          rpcUrl: RPC_URL,
+          networkPassphrase: NETWORK_PASSPHRASE,
+        });
+        return { content: [{ type: 'text', text: jsonStringify(result) }] };
+      } catch (error) {
+        return {
+          content: [{
+            type: 'text',
+            text: jsonStringify({
+              error: 'Prepare failed',
+              message: error instanceof Error ? error.message : 'Unknown error',
+            }),
+          }],
+        };
+      }
+    },
+  );
+
+  server.tool(
+    'prepare-sign-and-submit',
+    'Prepare a write transaction for secret-key signing and return the XDR for the frontend.',
+    {
+      xdr: z.string().describe('Transaction XDR from a contract call'),
+      toolName: z.string().describe('Name of the contract function being called'),
+    },
+    async ({ xdr, toolName }) => {
       return {
         content: [{
           type: 'text',
-          text: jsonStringify({ success: true, result }),
+          text: jsonStringify({ readyForSigning: true, xdr, preview: { toolName } }),
         }],
       };
-    } catch (error) {
-      return {
-        content: [{
-          type: 'text',
-          text: jsonStringify({
-            error: 'Submission failed',
-            message: error instanceof Error ? error.message : 'Unknown error',
-          }),
-        }],
-      };
-    }
+    },
+  );
+
+  return server;
+}
+
+// ─── Rate limiter (in-memory) ─────────────────────────────────────────────────
+//
+// Uses a simple sliding-window counter per IP.
+// For multi-instance deployments, swap this for rate-limiter-flexible with Redis:
+//   npm install rate-limiter-flexible ioredis
+//   import { RateLimiterRedis } from 'rate-limiter-flexible';
+
+const windowMs = 60_000;
+const ipWindows = new Map<string, { count: number; resetAt: number }>();
+
+function consumeRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = ipWindows.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    ipWindows.set(ip, { count: 1, resetAt: now + windowMs });
+    return true;
   }
-);
+  if (entry.count >= RATE_LIMIT) return false;
+  entry.count++;
+  return true;
+}
 
-// Start server
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error('{{server_name}}-mcp MCP server running on stdio');
+// Purge stale entries every 5 minutes to prevent unbounded memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of ipWindows) {
+    if (now >= entry.resetAt) ipWindows.delete(ip);
+  }
+}, 5 * 60_000).unref();
+
+// ─── CORS ─────────────────────────────────────────────────────────────────────
+
+function applyCors(req: http.IncomingMessage, res: http.ServerResponse): void {
+  const origin = req.headers.origin ?? '';
+  const allowed = CORS_ORIGINS.includes('*') || CORS_ORIGINS.includes(origin);
+  if (allowed) {
+    res.setHeader('Access-Control-Allow-Origin', CORS_ORIGINS.includes('*') ? '*' : origin);
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Mcp-Session-Id');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+
+// ─── Security headers ─────────────────────────────────────────────────────────
+
+function applySecurityHeaders(res: http.ServerResponse): void {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+}
+
+// ─── HTTP server ──────────────────────────────────────────────────────────────
+
+async function startHttpServer(): Promise<void> {
+  const httpServer = http.createServer(async (req, res) => {
+    applyCors(req, res);
+    applySecurityHeaders(res);
+
+    // Preflight
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    // Health check — always accessible, no rate limiting
+    if (req.method === 'GET' && req.url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }));
+      return;
+    }
+
+    // Rate limiting
+    const ip =
+      (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
+      req.socket.remoteAddress ??
+      'unknown';
+
+    if (!consumeRateLimit(ip)) {
+      res.writeHead(429, {
+        'Content-Type': 'application/json',
+        'Retry-After': '60',
+        'X-RateLimit-Limit': String(RATE_LIMIT),
+      });
+      res.end(JSON.stringify({ error: 'Too Many Requests', retryAfter: 60 }));
+      return;
+    }
+
+    // MCP endpoint (stateless — fresh server + transport per request)
+    if (req.url === '/mcp' || req.url?.startsWith('/mcp?')) {
+      const chunks: Buffer[] = [];
+      let bodySize = 0;
+      for await (const chunk of req) {
+        bodySize += (chunk as Buffer).length;
+        if (bodySize > MAX_BODY_BYTES) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Payload Too Large' }));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk as Buffer);
+      }
+      const rawBody = Buffer.concat(chunks).toString();
+
+      const mcpServer = createServer();
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      res.on('finish', () => mcpServer.close());
+
+      try {
+        await mcpServer.connect(transport);
+        await transport.handleRequest(req, res, rawBody ? JSON.parse(rawBody) : undefined);
+      } catch {
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Internal Server Error' }));
+        }
+      }
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not Found' }));
+  });
+
+  // Graceful shutdown
+  const shutdown = (signal: string) => {
+    console.error(`\n${signal} received — shutting down gracefully`);
+    httpServer.close(() => {
+      console.error('HTTP server closed');
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.error('Forcing exit after timeout');
+      process.exit(1);
+    }, 10_000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
+
+  httpServer.listen(PORT, () => {
+    console.error(`{{server_name}}-mcp running on HTTP port ${PORT}`);
+    console.error(`  Health : http://localhost:${PORT}/health`);
+    console.error(`  MCP    : http://localhost:${PORT}/mcp`);
+    console.error(`  CORS   : ${CORS_ORIGINS.join(', ')}`);
+    console.error(`  Limit  : ${RATE_LIMIT} req/min per IP`);
+  });
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+
+async function main(): Promise<void> {
+  if (USE_HTTP) {
+    await startHttpServer();
+  } else {
+    const server = createServer();
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error('{{server_name}}-mcp running on stdio');
+  }
 }
 
 main().catch((error) => {
