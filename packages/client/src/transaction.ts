@@ -99,6 +99,19 @@ export async function pollTransaction(
   );
 }
 
+/**
+ * Extract the fee from a transaction XDR without submitting it.
+ * Returns the fee in stroops as a string, or undefined if the XDR cannot be parsed.
+ */
+export function extractFeeFromXdr(xdr: string, networkPassphrase: string): string | undefined {
+  try {
+    const tx = TransactionBuilder.fromXDR(xdr, networkPassphrase);
+    return tx.fee;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Promise-based sleep utility */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

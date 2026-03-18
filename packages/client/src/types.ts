@@ -91,6 +91,29 @@ export interface CallResult<TData = unknown> {
   simulationResult?: unknown;
 }
 
+/**
+ * Result from simulating a transaction via client.simulate().
+ * Contains the XDR ready to sign and the estimated fee — without committing.
+ *
+ * Lifecycle:
+ * ```ts
+ * const preview = await client.simulate('deploy-token', args);
+ * console.log(`Estimated fee: ${preview.fee} stroops`);
+ * const { hash } = await client.signAndSubmit(preview.xdr!, { signer });
+ * const result = await client.waitForConfirmation(hash);
+ * ```
+ */
+export interface SimulateResult<TData = unknown> {
+  /** Transaction XDR — ready to sign if you choose to proceed */
+  xdr?: string;
+
+  /** Estimated transaction fee in stroops (extracted from the assembled XDR) */
+  fee?: string;
+
+  /** Decoded simulation result — the return value of the contract function */
+  simulationResult?: TData;
+}
+
 /** Result from signing and submitting a transaction */
 export interface SubmitResult {
   /** Transaction hash on the Stellar network */

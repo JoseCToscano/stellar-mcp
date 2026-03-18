@@ -7,6 +7,7 @@ export type {
   ToolDef,
   ToolMap,
   CallResult,
+  SimulateResult,
   SubmitResult,
   ToolInfo,
   Signer,

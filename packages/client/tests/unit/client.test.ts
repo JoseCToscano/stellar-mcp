@@ -25,8 +25,10 @@ vi.mock('../../src/transport.js', () => ({
 }));
 
 // Mock the transaction module
+const mockExtractFeeFromXdr = vi.fn();
 vi.mock('../../src/transaction.js', () => ({
   pollTransaction: vi.fn(),
+  extractFeeFromXdr: (...args: unknown[]) => mockExtractFeeFromXdr(...args),
 }));
 
 const VALID_OPTIONS = {
@@ -270,6 +272,74 @@ describe('MCPClient', () => {
       expect(call[1].rpcUrl).toBe(VALID_OPTIONS.rpcUrl);
       expect(call[1].networkPassphrase).toBe(VALID_OPTIONS.networkPassphrase);
       expect(typeof call[1].mcpCall).toBe('function');
+    });
+  });
+
+  describe('simulate', () => {
+    it('returns xdr and fee for write operations', async () => {
+      mockCallTool.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ xdr: 'AAAA...', simulationResult: undefined }),
+          },
+        ],
+      });
+      mockExtractFeeFromXdr.mockReturnValue('12345');
+
+      const client = new MCPClient(VALID_OPTIONS);
+      const result = await client.simulate('deploy-token', { deployer: 'GABC' });
+
+      expect(result.xdr).toBe('AAAA...');
+      expect(result.fee).toBe('12345');
+      expect(mockExtractFeeFromXdr).toHaveBeenCalledWith('AAAA...', VALID_OPTIONS.networkPassphrase);
+    });
+
+    it('returns simulationResult for read-only operations without xdr', async () => {
+      mockCallTool.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ simulationResult: 'GADMIN123' }),
+          },
+        ],
+      });
+
+      const client = new MCPClient(VALID_OPTIONS);
+      const result = await client.simulate('get-admin');
+
+      expect(result.xdr).toBeUndefined();
+      expect(result.fee).toBeUndefined();
+      expect(result.simulationResult).toBe('GADMIN123');
+      expect(mockExtractFeeFromXdr).not.toHaveBeenCalled();
+    });
+
+    it('returns undefined fee when XDR parsing fails', async () => {
+      mockCallTool.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ xdr: 'BAD_XDR', simulationResult: null }),
+          },
+        ],
+      });
+      mockExtractFeeFromXdr.mockReturnValue(undefined);
+
+      const client = new MCPClient(VALID_OPTIONS);
+      const result = await client.simulate('deploy-token', {});
+
+      expect(result.xdr).toBe('BAD_XDR');
+      expect(result.fee).toBeUndefined();
+    });
+
+    it('propagates MCPToolError from underlying call', async () => {
+      mockCallTool.mockResolvedValue({
+        content: [{ type: 'text', text: 'Tool error' }],
+        isError: true,
+      });
+
+      const client = new MCPClient(VALID_OPTIONS);
+      await expect(client.simulate('bad-tool', {})).rejects.toThrow(MCPToolError);
     });
   });
 

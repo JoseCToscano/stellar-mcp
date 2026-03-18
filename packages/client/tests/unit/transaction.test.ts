@@ -19,7 +19,7 @@ vi.mock('@stellar/stellar-sdk', () => ({
 }));
 
 // Import after mocking
-const { submitSignedTransaction, pollTransaction } = await import('../../src/transaction.js');
+const { submitSignedTransaction, pollTransaction, extractFeeFromXdr } = await import('../../src/transaction.js');
 
 describe('submitSignedTransaction', () => {
   beforeEach(() => {
@@ -116,5 +116,38 @@ describe('pollTransaction', () => {
 
     expect(result.status).toBe('SUCCESS');
     expect(callCount).toBe(3);
+  });
+});
+
+describe('extractFeeFromXdr', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns fee string when XDR parses successfully', () => {
+    mockFromXDR.mockReturnValue({ fee: '12345' });
+
+    const fee = extractFeeFromXdr('AAAA...', 'Test SDF Network ; September 2015');
+
+    expect(fee).toBe('12345');
+    expect(mockFromXDR).toHaveBeenCalledWith('AAAA...', 'Test SDF Network ; September 2015');
+  });
+
+  it('returns undefined when XDR parsing throws', () => {
+    mockFromXDR.mockImplementation(() => {
+      throw new Error('bad XDR');
+    });
+
+    const fee = extractFeeFromXdr('not-valid-xdr', 'Test SDF Network ; September 2015');
+
+    expect(fee).toBeUndefined();
+  });
+
+  it('returns undefined when parsed transaction has no fee field', () => {
+    mockFromXDR.mockReturnValue({});
+
+    const fee = extractFeeFromXdr('AAAA...', 'Test SDF Network ; September 2015');
+
+    expect(fee).toBeUndefined();
   });
 });

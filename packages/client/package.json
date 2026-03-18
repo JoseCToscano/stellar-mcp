@@ -1,6 +1,6 @@
 {
   "name": "@stellar-mcp/client",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Type-safe programmatic client for Stellar MCP servers — discover tools, call contracts, sign and submit transactions",
   "type": "module",
   "exports": {

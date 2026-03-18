@@ -339,6 +339,40 @@ Throws `MCPToolError` if the server returns an error response.
 
 ---
 
+### `client.simulate(toolName, args?)`
+
+Preview a transaction **without signing or submitting**. Returns the assembled XDR and the estimated fee in stroops — useful for showing users the cost before asking them to confirm.
+
+```ts
+const preview = await client.simulate('deploy-token', {
+  deployer: 'GABC...',
+  config: { /* ... */ },
+});
+
+console.log(`Estimated fee: ${preview.fee} stroops`);
+
+// Only sign+submit if the user confirms:
+const { hash } = await client.signAndSubmit(preview.xdr!, {
+  signer: secretKeySigner(process.env.SECRET_KEY!),
+});
+const result = await client.waitForConfirmation(hash);
+```
+
+Returns `SimulateResult<TData>`:
+
+| Field | Type | Description |
+|---|---|---|
+| `xdr` | `string \| undefined` | Assembled transaction XDR, ready to sign |
+| `fee` | `string \| undefined` | Estimated fee in stroops (extracted from XDR) |
+| `simulationResult` | `TData \| undefined` | Decoded return value (for read-only tools, this is the answer) |
+
+For **read-only tools** (`get-admin`, `get-token-count`, etc.) `xdr` and `fee` are `undefined` — use `simulationResult` for the value.
+
+This completes the full 4-step Soroban lifecycle originally specified:
+> **simulate → inspect → signAndSubmit → waitForConfirmation**
+
+---
+
 ### `client.signAndSubmit(xdr, options)`
 
 Sign and submit a transaction using a signer adapter.
@@ -592,7 +626,7 @@ MCP_URL=http://localhost:3001/mcp \
 ```bash
 npm run build          # compile to dist/
 npm run dev            # watch mode
-npm test               # unit tests (83 tests, no server required)
+npm test               # unit tests (90 tests, no server required)
 npm run lint           # ESLint
 npm run format         # Prettier --write
 npm run format:check   # Prettier --check (used in CI)
