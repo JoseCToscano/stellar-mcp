@@ -137,6 +137,7 @@ export default function Page() {
         toolName={tx.pendingToolName}
         args={tx.pendingArgs}
         xdr={tx.pendingXdr}
+        simulationFee={tx.simulationFee}
         onConfirm={handleConfirm}
         onCancel={tx.cancel}
       />

@@ -4,6 +4,10 @@
 //
 // State machine for the full PasskeyKit sign + submit flow.
 // States: idle → simulating → previewing → signing → submitting → success | error
+//
+// v0.2.0: write operations now call client.simulate() which returns the
+// estimated fee alongside the XDR, so the TransactionModal can show users
+// the cost before they confirm.
 
 import { useState, useCallback } from 'react';
 import { getAccount, getServer } from '@/lib/passkey';
@@ -27,6 +31,8 @@ export interface TransactionState {
   readResult: unknown | null;
   txHash: string | null;
   error: string | null;
+  /** Estimated fee in stroops returned by simulate(), null until a write op is previewed */
+  simulationFee: string | null;
 
   // Actions
   execute: (toolName: string, args: Record<string, unknown>) => Promise<void>;
@@ -43,6 +49,7 @@ export function useTransaction(): TransactionState {
   const [readResult, setReadResult] = useState<unknown | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [simulationFee, setSimulationFee] = useState<string | null>(null);
 
   const reset = useCallback(() => {
     setPhase('idle');
@@ -52,6 +59,7 @@ export function useTransaction(): TransactionState {
     setReadResult(null);
     setTxHash(null);
     setError(null);
+    setSimulationFee(null);
   }, []);
 
   const cancel = useCallback(() => {
@@ -59,9 +67,10 @@ export function useTransaction(): TransactionState {
     setPendingXdr(null);
     setPendingToolName(null);
     setPendingArgs(null);
+    setSimulationFee(null);
   }, []);
 
-  // Step 1: call the tool via MCP → get XDR or read result
+  // Step 1: call the tool via MCP → get XDR + fee estimate (write) or read result
   const execute = useCallback(
     async (toolName: string, args: Record<string, unknown>) => {
       reset();
@@ -69,20 +78,29 @@ export function useTransaction(): TransactionState {
 
       const client = createClient();
       try {
-        // Inject contractId as source account for write tools
         const callArgs = { ...args };
 
-        const result = await client.call(toolName, callArgs);
-
-        if (isReadOperation(toolName) || !result.xdr) {
-          // Read operation — display result directly, no signing
+        if (isReadOperation(toolName)) {
+          // Read operation — call directly, no fee preview needed
+          const result = await client.call(toolName, callArgs);
           setReadResult(result.simulationResult ?? result.data);
           setPhase('success');
           return;
         }
 
-        // Write operation — show preview modal
-        setPendingXdr(result.xdr);
+        // Write operation — simulate to get fee estimate alongside the XDR
+        const preview = await client.simulate(toolName, callArgs);
+
+        if (!preview.xdr) {
+          // Server returned no XDR — treat as read result
+          setReadResult(preview.simulationResult);
+          setPhase('success');
+          return;
+        }
+
+        // Store fee and transition to confirmation modal
+        setSimulationFee(preview.fee ?? null);
+        setPendingXdr(preview.xdr);
         setPendingToolName(toolName);
         setPendingArgs(args);
         setPhase('previewing');
@@ -118,6 +136,7 @@ export function useTransaction(): TransactionState {
         setPendingXdr(null);
         setPendingToolName(null);
         setPendingArgs(null);
+        setSimulationFee(null);
         setPhase('success');
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Transaction failed';
@@ -136,6 +155,7 @@ export function useTransaction(): TransactionState {
     readResult,
     txHash,
     error,
+    simulationFee,
     execute,
     confirm,
     cancel,

@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { AlertCircle, Check, X } from 'lucide-react';
+import { AlertCircle, Check, X, Zap } from 'lucide-react';
 import { Button } from './ui/Button';
 
 interface TransactionModalProps {
@@ -9,15 +9,26 @@ interface TransactionModalProps {
   toolName: string | null;
   args: Record<string, unknown> | null;
   xdr: string | null;
+  simulationFee?: string | null;
   onConfirm: () => void;
   onCancel: () => void;
+}
+
+/** Convert a stroops string to a human-readable XLM amount */
+function stroopsToXlm(stroops: string): string {
+  const n = parseInt(stroops, 10);
+  if (isNaN(n)) return stroops;
+  const xlm = n / 10_000_000;
+  // Show up to 7 decimal places, strip trailing zeros
+  return xlm.toFixed(7).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') + ' XLM';
 }
 
 export function TransactionModal({
   open,
   toolName,
   args,
-  xdr,
+  xdr: _xdr,
+  simulationFee,
   onConfirm,
   onCancel,
 }: TransactionModalProps) {
@@ -61,6 +72,24 @@ export function TransactionModal({
                 )}
               </div>
             </div>
+
+            {/* Simulation result — estimated fee from client.simulate() */}
+            {simulationFee != null ? (
+              <div className="flex items-center justify-between p-3 rounded-md bg-emerald-500/10 border border-emerald-500/20">
+                <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+                  <Zap size={14} className="shrink-0" />
+                  <span className="text-xs font-medium">Estimated Fee</span>
+                </div>
+                <span className="font-mono text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                  {stroopsToXlm(simulationFee)}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 p-3 rounded-md bg-muted/50 text-muted-foreground text-xs">
+                <Zap size={14} className="shrink-0" />
+                <span>Fee sponsored by OZ Relayer — no XLM required</span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-xs font-medium">
