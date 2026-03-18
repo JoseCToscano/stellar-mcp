@@ -386,6 +386,8 @@ Signers are pluggable adapters that implement the `Signer` interface. Pass one t
 
 Delegates signing and submission to the MCP server's built-in `sign-and-submit` tool. The server handles auth entry signing, fresh sequence numbers, and LaunchTube submission. The secret key is passed per-request and never stored.
 
+> **Security note:** `secretKeySigner` transmits the secret key to the MCP server's `sign-and-submit` tool. Only use this with trusted, local, or TLS-secured servers. For untrusted servers, prefer `connectFreighter()` which signs client-side.
+
 ```ts
 import { secretKeySigner } from '@stellar-mcp/client';
 // or via entry point:
@@ -590,7 +592,7 @@ MCP_URL=http://localhost:3001/mcp \
 ```bash
 npm run build          # compile to dist/
 npm run dev            # watch mode
-npm test               # unit tests (40 tests, no server required)
+npm test               # unit tests (83 tests, no server required)
 npm run lint           # ESLint
 npm run format         # Prettier --write
 npm run format:check   # Prettier --check (used in CI)

@@ -89,5 +89,15 @@
     "blockchain",
     "web3"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "author": "Jose Toscano",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoseCToscano/stellar-mcp.git",
+    "directory": "packages/client"
+  },
+  "homepage": "https://github.com/JoseCToscano/stellar-mcp/tree/main/packages/client#readme",
+  "bugs": {
+    "url": "https://github.com/JoseCToscano/stellar-mcp/issues"
+  }
 }
