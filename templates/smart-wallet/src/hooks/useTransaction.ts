@@ -92,10 +92,7 @@ export function useTransaction(): TransactionState {
         const preview = await client.simulate(toolName, callArgs);
 
         if (!preview.xdr) {
-          // Server returned no XDR — treat as read result
-          setReadResult(preview.simulationResult);
-          setPhase('success');
-          return;
+          throw new Error(`Server did not return transaction XDR for "${toolName}"`);
         }
 
         // Store fee and transition to confirmation modal

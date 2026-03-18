@@ -136,7 +136,6 @@ export default function Page() {
         open={tx.phase === 'previewing'}
         toolName={tx.pendingToolName}
         args={tx.pendingArgs}
-        xdr={tx.pendingXdr}
         simulationFee={tx.simulationFee}
         onConfirm={handleConfirm}
         onCancel={tx.cancel}

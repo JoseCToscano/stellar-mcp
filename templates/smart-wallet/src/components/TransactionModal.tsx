@@ -8,7 +8,6 @@ interface TransactionModalProps {
   open: boolean;
   toolName: string | null;
   args: Record<string, unknown> | null;
-  xdr: string | null;
   simulationFee?: string | null;
   onConfirm: () => void;
   onCancel: () => void;
@@ -27,7 +26,6 @@ export function TransactionModal({
   open,
   toolName,
   args,
-  xdr: _xdr,
   simulationFee,
   onConfirm,
   onCancel,
@@ -87,7 +85,7 @@ export function TransactionModal({
             ) : (
               <div className="flex items-center gap-2 p-3 rounded-md bg-muted/50 text-muted-foreground text-xs">
                 <Zap size={14} className="shrink-0" />
-                <span>Fee sponsored by OZ Relayer — no XLM required</span>
+                <span>Fee estimate unavailable</span>
               </div>
             )}
           </div>

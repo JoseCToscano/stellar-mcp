@@ -174,7 +174,6 @@ export class MCPClient<TTools extends { [K in keyof TTools]: ToolDef } = ToolMap
     toolName: K,
     args: TTools[K]['args'] = {} as TTools[K]['args'],
   ): Promise<SimulateResult<TTools[K]['result']>> {
-    logger.debug('Simulating tool call', { toolName });
     const result = await this.call(toolName, args);
     return {
       xdr: result.xdr,
