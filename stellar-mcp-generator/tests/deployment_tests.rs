@@ -353,3 +353,94 @@ fn test_generated_readme_has_rate_limiting_section() {
     assert!(source.contains("RATE_LIMIT"),
         "Generated README should document RATE_LIMIT env var");
 }
+
+// ── CORS configuration ────────────────────────────────────────────────────────
+
+#[test]
+fn test_typescript_generator_has_cors_origins_env_var() {
+    let source = fs::read_to_string("src/generator/mcp_generator.rs")
+        .expect("Failed to read mcp_generator.rs");
+
+    assert!(source.contains("CORS_ORIGINS"),
+        "TypeScript generator should support CORS_ORIGINS env var");
+}
+
+#[test]
+fn test_typescript_cors_uses_env_var_not_wildcard() {
+    let source = fs::read_to_string("src/generator/mcp_generator.rs")
+        .expect("Failed to read mcp_generator.rs");
+
+    // Should split CORS_ORIGINS by comma, not hardcode '*'
+    assert!(source.contains("CORS_ORIGINS ?? '*'"),
+        "TypeScript CORS should default to * but be configurable via env");
+    assert!(source.contains("CORS_ORIGINS.includes"),
+        "TypeScript CORS should check the CORS_ORIGINS list");
+}
+
+#[test]
+fn test_typescript_env_example_documents_cors_origins() {
+    let source = fs::read_to_string("src/generator/mcp_generator.rs")
+        .expect("Failed to read mcp_generator.rs");
+
+    assert!(source.contains("CORS_ORIGINS"),
+        "TypeScript .env.example should document CORS_ORIGINS");
+}
+
+#[test]
+fn test_python_server_template_has_cors_origins() {
+    let content = fs::read_to_string("templates/python/server.py.hbs")
+        .expect("Failed to read server.py.hbs");
+
+    assert!(content.contains("CORS_ORIGINS"),
+        "Python server should support CORS_ORIGINS env var");
+    assert!(content.contains("CORSMiddleware"),
+        "Python server should use Starlette CORSMiddleware");
+    assert!(content.contains("allow_origins"),
+        "Python CORSMiddleware should set allow_origins");
+}
+
+#[test]
+fn test_python_env_example_documents_cors_origins() {
+    let content = fs::read_to_string("templates/python/env.example.hbs")
+        .expect("Failed to read python/env.example.hbs");
+
+    assert!(content.contains("CORS_ORIGINS"),
+        "Python .env.example should document CORS_ORIGINS");
+}
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_typescript_generator_has_sigterm_handler() {
+    let source = fs::read_to_string("src/generator/mcp_generator.rs")
+        .expect("Failed to read mcp_generator.rs");
+
+    assert!(source.contains("SIGTERM"),
+        "TypeScript generator should add SIGTERM handler for graceful shutdown");
+    assert!(source.contains("SIGINT"),
+        "TypeScript generator should add SIGINT handler for graceful shutdown");
+}
+
+#[test]
+fn test_typescript_graceful_shutdown_closes_server() {
+    let source = fs::read_to_string("src/generator/mcp_generator.rs")
+        .expect("Failed to read mcp_generator.rs");
+
+    assert!(source.contains("httpServer.close"),
+        "Graceful shutdown should close the HTTP server before exiting");
+    assert!(source.contains("process.exit(0)"),
+        "Graceful shutdown should exit with code 0 on success");
+}
+
+#[test]
+fn test_python_server_template_has_sigterm_handler() {
+    let content = fs::read_to_string("templates/python/server.py.hbs")
+        .expect("Failed to read server.py.hbs");
+
+    assert!(content.contains("signal.SIGTERM"),
+        "Python server should handle SIGTERM for graceful shutdown");
+    assert!(content.contains("signal.SIGINT"),
+        "Python server should handle SIGINT for graceful shutdown");
+    assert!(content.contains("signal.signal"),
+        "Python server should register signal handlers");
+}

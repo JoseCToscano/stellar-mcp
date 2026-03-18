@@ -507,9 +507,13 @@ impl<'a> McpGenerator<'a> {
         content.push_str("        if (now >= entry.resetAt) ipWindows.delete(ip);\n");
         content.push_str("      }\n");
         content.push_str("    }, 5 * 60_000);\n\n");
+        content.push_str("    const CORS_ORIGINS = (process.env.CORS_ORIGINS ?? '*').split(',').map((s: string) => s.trim());\n");
         content.push_str("    const app = express();\n");
         content.push_str("    app.use(cors({\n");
-        content.push_str("      origin: '*',\n");
+        content.push_str("      origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {\n");
+        content.push_str("        if (CORS_ORIGINS.includes('*') || !origin || CORS_ORIGINS.includes(origin)) cb(null, true);\n");
+        content.push_str("        else cb(new Error('Not allowed by CORS'));\n");
+        content.push_str("      },\n");
         content.push_str("      methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],\n");
         content.push_str("      allowedHeaders: ['Content-Type', 'Accept', 'mcp-session-id'],\n");
         content.push_str("      exposedHeaders: ['mcp-session-id'],\n");
@@ -581,13 +585,25 @@ impl<'a> McpGenerator<'a> {
         content.push_str("      });\n");
         content.push_str("    });\n\n");
 
-        content.push_str("    app.listen(port, () => {\n");
-        content.push_str(&format!("      console.error('{}-mcp MCP server running on HTTP port', port);\n", self.server_name));
+        content.push_str("    const httpServer = app.listen(port, () => {\n");
+        content.push_str(&format!("      console.error('{}-mcp MCP server running on HTTP port ' + port);\n", self.server_name));
         content.push_str("      console.error('Mode: STATELESS (no sessions)');\n");
         content.push_str("      console.error('Rate limit: ' + RATE_LIMIT + ' req/min per IP');\n");
+        content.push_str("      console.error('CORS origins: ' + CORS_ORIGINS.join(', '));\n");
         content.push_str("      console.error('Health check: http://localhost:' + port + '/health');\n");
         content.push_str("      console.error('MCP endpoint: http://localhost:' + port + '/mcp');\n");
         content.push_str("    });\n");
+        content.push_str("    // Graceful shutdown\n");
+        content.push_str("    const shutdown = (signal: string) => {\n");
+        content.push_str("      console.error('\\n' + signal + ' received — shutting down gracefully');\n");
+        content.push_str("      httpServer.close(() => {\n");
+        content.push_str("        console.error('HTTP server closed');\n");
+        content.push_str("        process.exit(0);\n");
+        content.push_str("      });\n");
+        content.push_str("      setTimeout(() => { console.error('Forcing exit'); process.exit(1); }, 10_000).unref();\n");
+        content.push_str("    };\n");
+        content.push_str("    process.on('SIGTERM', () => shutdown('SIGTERM'));\n");
+        content.push_str("    process.on('SIGINT',  () => shutdown('SIGINT'));\n");
         content.push_str("  } else {\n");
         content.push_str("    // Stdio mode (default for Claude Desktop)\n");
         content.push_str("    const server = createMcpServer();\n");
@@ -1431,6 +1447,9 @@ export async function signAndSendWithPasskey(
         content.push_str("\n");
         content.push_str("# Rate limiting (requests per minute per IP, HTTP mode only)\n");
         content.push_str("# RATE_LIMIT=100\n");
+        content.push_str("\n");
+        content.push_str("# CORS (comma-separated origins, or * for all — HTTP mode only)\n");
+        content.push_str("# CORS_ORIGINS=https://myapp.example.com,https://staging.example.com\n");
 
         fs::write(self.output_dir.join(".env.example"), content)?;
 

@@ -306,13 +306,35 @@ if __name__ == "__main__":
 
                 await self.app(scope, receive, send)
 
-        # Get the ASGI app from FastMCP and wrap with rate limiting
+        # CORS — honour CORS_ORIGINS env var (comma-separated list or '*' for all)
+        import signal
+        from starlette.middleware.cors import CORSMiddleware
+        _cors_raw = os.getenv("CORS_ORIGINS", "*")
+        _cors_origins = [s.strip() for s in _cors_raw.split(",")]
+        _allow_all = "*" in _cors_origins
+
+        # Get the ASGI app from FastMCP, wrap with CORS then rate limiting
         http_app = mcp.http_app(transport="streamable-http", stateless_http=True)
+        http_app = CORSMiddleware(
+            http_app,
+            allow_origins=["*"] if _allow_all else _cors_origins,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["Content-Type", "Authorization", "Mcp-Session-Id"],
+            allow_credentials=False,
+        )
         app = _RateLimitedApp(http_app)
+
+        # Graceful shutdown — handle SIGTERM and SIGINT
+        def _shutdown(signum, frame):
+            print(f"\nSignal {signum} received — shutting down gracefully", file=sys.stderr)
+            sys.exit(0)
+        signal.signal(signal.SIGTERM, _shutdown)
+        signal.signal(signal.SIGINT, _shutdown)
 
         print(f"{{server_name}}-mcp MCP server running on HTTP port {port}", file=sys.stderr)
         print(f"Mode: STATELESS (no sessions)", file=sys.stderr)
         print(f"Rate limit: {RATE_LIMIT} req/min per IP", file=sys.stderr)
+        print(f"CORS origins: {_cors_raw}", file=sys.stderr)
         print(f"Health check: http://localhost:{port}/health", file=sys.stderr)
         print(f"MCP endpoint: http://localhost:{port}/mcp", file=sys.stderr)
         uvicorn.run(app, host="0.0.0.0", port=port)
