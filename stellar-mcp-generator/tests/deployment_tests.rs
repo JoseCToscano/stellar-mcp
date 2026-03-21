@@ -354,6 +354,129 @@ fn test_generated_readme_has_rate_limiting_section() {
         "Generated README should document RATE_LIMIT env var");
 }
 
+// ── Logging ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_index_template_has_structured_logger() {
+    let content = fs::read_to_string("templates/index.ts.hbs")
+        .expect("Failed to read index.ts.hbs");
+
+    assert!(content.contains("function log(tool: string, level:"),
+        "index.ts should have a structured log() function");
+    assert!(content.contains("console.error(prefix,"),
+        "Logger should write to stderr via console.error");
+    assert!(content.contains("toISOString()"),
+        "Logger should include ISO timestamps");
+}
+
+#[test]
+fn test_tool_handlers_log_on_call_and_result() {
+    let content = fs::read_to_string("templates/index.ts.hbs")
+        .expect("Failed to read index.ts.hbs");
+
+    // Contract tool handlers should log on entry and success
+    assert!(content.contains("log('{{name_kebab}}', 'info', 'called'"),
+        "Contract tool handlers should log on call");
+    assert!(content.contains("log('{{name_kebab}}', 'info', 'success'"),
+        "Contract tool handlers should log on success");
+}
+
+#[test]
+fn test_builtin_tools_have_logging() {
+    let content = fs::read_to_string("templates/index.ts.hbs")
+        .expect("Failed to read index.ts.hbs");
+
+    assert!(content.contains("log('sign-and-submit', 'info', 'called')"),
+        "sign-and-submit should log on call");
+    assert!(content.contains("log('sign-and-submit', 'info', 'success'"),
+        "sign-and-submit should log on success");
+    assert!(content.contains("log('prepare-transaction', 'info', 'called'"),
+        "prepare-transaction should log on call");
+}
+
+// ── Soroban error parsing ───────────────────────────────────────────────────
+
+#[test]
+fn test_index_template_has_soroban_error_parser() {
+    let content = fs::read_to_string("templates/index.ts.hbs")
+        .expect("Failed to read index.ts.hbs");
+
+    assert!(content.contains("function parseSorobanError(error: Error)"),
+        "index.ts should have parseSorobanError function");
+    assert!(content.contains("diagnosticEvents"),
+        "parseSorobanError should extract diagnostic events");
+    assert!(content.contains("SOROBAN_ERROR_HINTS"),
+        "index.ts should have error hint lookup table");
+}
+
+#[test]
+fn test_soroban_error_hints_cover_common_errors() {
+    let content = fs::read_to_string("templates/index.ts.hbs")
+        .expect("Failed to read index.ts.hbs");
+
+    assert!(content.contains("Error(Storage, ExistingValue)"),
+        "Should have hint for ExistingValue");
+    assert!(content.contains("Error(Auth, InvalidAction)"),
+        "Should have hint for InvalidAction");
+    assert!(content.contains("Error(Budget, Exceeded)"),
+        "Should have hint for Budget exceeded");
+    assert!(content.contains("Error(Value, InvalidInput)"),
+        "Should have hint for InvalidInput");
+    assert!(content.contains("Error(WasmVm, Trapped)"),
+        "Should have hint for WasmVm trapped");
+}
+
+#[test]
+fn test_soroban_error_parser_extracts_error_code() {
+    let content = fs::read_to_string("templates/index.ts.hbs")
+        .expect("Failed to read index.ts.hbs");
+
+    // Should use regex to extract Error(Category, Code) pattern
+    assert!(content.contains(r"Error\([A-Za-z]+,\s*[A-Za-z]+\)"),
+        "parseSorobanError should regex-match Soroban error codes");
+}
+
+// ── isError flag ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_index_template_has_format_tool_error() {
+    let content = fs::read_to_string("templates/index.ts.hbs")
+        .expect("Failed to read index.ts.hbs");
+
+    assert!(content.contains("function formatToolError(toolName: string, error: unknown)"),
+        "index.ts should have formatToolError helper");
+    assert!(content.contains("isError: true"),
+        "formatToolError should set isError: true on responses");
+}
+
+#[test]
+fn test_all_error_handlers_use_format_tool_error() {
+    let content = fs::read_to_string("templates/index.ts.hbs")
+        .expect("Failed to read index.ts.hbs");
+
+    // Contract tool handlers
+    assert!(content.contains("return formatToolError('{{name_kebab}}', error)"),
+        "Contract tool handlers should use formatToolError");
+    // Built-in tools
+    assert!(content.contains("return formatToolError('sign-and-submit', error)"),
+        "sign-and-submit should use formatToolError");
+    assert!(content.contains("return formatToolError('prepare-transaction', error)"),
+        "prepare-transaction should use formatToolError");
+}
+
+#[test]
+fn test_error_response_distinguishes_soroban_errors() {
+    let content = fs::read_to_string("templates/index.ts.hbs")
+        .expect("Failed to read index.ts.hbs");
+
+    assert!(content.contains("isSorobanError"),
+        "formatToolError should detect Soroban-specific errors");
+    assert!(content.contains("HostError:"),
+        "Should detect HostError pattern in messages");
+    assert!(content.contains("SimulationFailed"),
+        "Should detect SimulationFailed pattern in messages");
+}
+
 // ── CORS configuration ────────────────────────────────────────────────────────
 
 #[test]

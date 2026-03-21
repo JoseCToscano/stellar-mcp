@@ -31,6 +31,101 @@ const MAX_BODY_BYTES     = 1_048_576; // 1 MB
 const jsonStringify = (obj: unknown, space?: number): string =>
   JSON.stringify(obj, (_, v) => (typeof v === 'bigint' ? v.toString() : v), space);
 
+// ─── Logger ──────────────────────────────────────────────────────────────────
+
+/** Structured logger — writes to stderr (MCP convention: stdout is for protocol) */
+function log(tool: string, level: 'info' | 'error' | 'debug', message: string, data?: unknown): void {
+  const ts = new Date().toISOString();
+  const prefix = `${ts} [${tool}] ${level.toUpperCase()}:`;
+  if (data !== undefined) {
+    console.error(prefix, message, typeof data === 'string' ? data : jsonStringify(data));
+  } else {
+    console.error(prefix, message);
+  }
+}
+
+// ─── Soroban error parser ────────────────────────────────────────────────────
+
+/** Common Soroban host error codes → human-readable descriptions */
+const SOROBAN_ERROR_HINTS: Record<string, string> = {
+  'Error(Storage, ExistingValue)': 'An entry with this key already exists (e.g. contract deployed with same salt)',
+  'Error(Auth, InvalidAction)': 'Authorization failed — the signer does not have permission for this action',
+  'Error(Budget, Exceeded)': 'Transaction budget exceeded — the operation is too expensive',
+  'Error(Value, InvalidInput)': 'Invalid input value — check parameter types and ranges',
+  'Error(Object, MissingValue)': 'Required value not found — a referenced entry does not exist',
+  'Error(WasmVm, Trapped)': 'Contract execution trapped — likely a panic or assertion failure in the contract',
+};
+
+/**
+ * Parse Soroban simulation errors into structured, AI-friendly output.
+ * Extracts human-readable reasons from diagnostic event logs.
+ */
+function parseSorobanError(error: Error): {
+  error: string;
+  reason: string;
+  diagnosticEvents: string[];
+  hint?: string;
+  raw: string;
+} {
+  const msg = error.message;
+
+  // Extract the error code like Error(Storage, ExistingValue)
+  const codeMatch = msg.match(/Error\([A-Za-z]+,\s*[A-Za-z]+\)/);
+  const errorCode = codeMatch?.[0] ?? 'Unknown';
+
+  // Extract human-readable data strings from diagnostic events
+  const diagnosticEvents: string[] = [];
+  const dataMatches = msg.matchAll(/data:(?:"([^"]+)"|\[([^\]]+)\])/g);
+  for (const m of dataMatches) {
+    const text = m[1] ?? m[2];
+    if (text && !text.startsWith('escalating')) {
+      diagnosticEvents.push(text);
+    }
+  }
+
+  // Extract the escalation reason as a fallback
+  const escalationMatch = msg.match(/data:"(escalating[^"]+)"/);
+  if (escalationMatch) {
+    diagnosticEvents.push(escalationMatch[1]);
+  }
+
+  // Build a concise reason from the diagnostic events
+  const reason = diagnosticEvents[0] ?? `Soroban host error: ${errorCode}`;
+
+  return {
+    error: errorCode,
+    reason,
+    diagnosticEvents,
+    hint: SOROBAN_ERROR_HINTS[errorCode],
+    raw: msg,
+  };
+}
+
+/** Format any tool error into a structured MCP error response */
+function formatToolError(toolName: string, error: unknown): {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: true;
+} {
+  const err = error instanceof Error ? error : new Error(String(error));
+  const isSorobanError = err.message.includes('HostError:') || err.message.includes('SimulationFailed');
+
+  let body: Record<string, unknown>;
+  if (isSorobanError) {
+    body = parseSorobanError(err);
+  } else {
+    body = {
+      error: 'Tool execution failed',
+      reason: err.message,
+    };
+  }
+
+  log(toolName, 'error', body.reason as string);
+  return {
+    content: [{ type: 'text', text: jsonStringify(body, 2) }],
+    isError: true,
+  };
+}
+
 // ─── Server factory ───────────────────────────────────────────────────────────
 //
 // Returns a fully-configured McpServer with all tools registered.
@@ -56,23 +151,17 @@ function createServer(): McpServer {
     {},
     {{/if}}
     async (params) => {
+      log('{{name_kebab}}', 'info', 'called', params);
       try {
         const result = await tools.{{name}}(params, {
           contractId: CONTRACT_ID,
           rpcUrl: RPC_URL,
           networkPassphrase: NETWORK_PASSPHRASE,
         });
+        log('{{name_kebab}}', 'info', 'success', result);
         return { content: [{ type: 'text', text: jsonStringify(result, 2) }] };
       } catch (error) {
-        return {
-          content: [{
-            type: 'text',
-            text: jsonStringify({
-              error: 'Tool execution failed',
-              message: error instanceof Error ? error.message : 'Unknown error',
-            }),
-          }],
-        };
+        return formatToolError('{{name_kebab}}', error);
       }
     },
   );
@@ -87,6 +176,7 @@ function createServer(): McpServer {
       walletContractId: z.string().optional().describe('Smart wallet contract ID for passkey signing'),
     },
     async ({ xdr, secretKey, walletContractId }) => {
+      log('sign-and-submit', 'info', 'called');
       try {
         if (!secretKey) {
           throw new Error('secretKey is required');
@@ -95,6 +185,7 @@ function createServer(): McpServer {
         {{#if with_passkey}}
         if (walletContractId) {
           const result = await signAndSendWithPasskey(xdr, walletContractId, secretKey);
+          log('sign-and-submit', 'info', 'success (passkey)', result);
           return { content: [{ type: 'text', text: jsonStringify({ success: true, result }) }] };
         }
         {{/if}}
@@ -105,17 +196,10 @@ function createServer(): McpServer {
         const signedXdr = await signTransaction(xdr, secretKey);
         const result = await submitTransaction(signedXdr);
         {{/if}}
+        log('sign-and-submit', 'info', 'success', result);
         return { content: [{ type: 'text', text: jsonStringify({ success: true, result }) }] };
       } catch (error) {
-        return {
-          content: [{
-            type: 'text',
-            text: jsonStringify({
-              error: 'Submission failed',
-              message: error instanceof Error ? error.message : 'Unknown error',
-            }),
-          }],
-        };
+        return formatToolError('sign-and-submit', error);
       }
     },
   );
@@ -128,23 +212,17 @@ function createServer(): McpServer {
       walletAddress: z.string().describe('Wallet public key (G...) to prepare for'),
     },
     async ({ xdr, walletAddress }) => {
+      log('prepare-transaction', 'info', 'called', { walletAddress });
       try {
         const { prepareTransaction } = await import('./lib/utils.js');
         const result = await prepareTransaction(xdr, walletAddress, {
           rpcUrl: RPC_URL,
           networkPassphrase: NETWORK_PASSPHRASE,
         });
+        log('prepare-transaction', 'info', 'success');
         return { content: [{ type: 'text', text: jsonStringify(result) }] };
       } catch (error) {
-        return {
-          content: [{
-            type: 'text',
-            text: jsonStringify({
-              error: 'Prepare failed',
-              message: error instanceof Error ? error.message : 'Unknown error',
-            }),
-          }],
-        };
+        return formatToolError('prepare-transaction', error);
       }
     },
   );
