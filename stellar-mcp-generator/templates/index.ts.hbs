@@ -13,6 +13,8 @@ import { signAndSendWithPasskey } from './lib/passkey.js';
 {{/if}}
 import { submitTransaction } from './lib/submit.js';
 import { signTransaction } from './lib/utils.js';
+import { log, jsonStringify } from './lib/logger.js';
+import { formatToolError } from './lib/errors.js';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -24,107 +26,6 @@ const USE_HTTP           = process.env.USE_HTTP?.toLowerCase() === 'true';
 const CORS_ORIGINS       = (process.env.CORS_ORIGINS ?? '*').split(',').map(s => s.trim());
 const RATE_LIMIT         = parseInt(process.env.RATE_LIMIT ?? '100', 10);
 const MAX_BODY_BYTES     = 1_048_576; // 1 MB
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Serialize BigInt values — Soroban uses i128/u128 which become BigInt in JS */
-const jsonStringify = (obj: unknown, space?: number): string =>
-  JSON.stringify(obj, (_, v) => (typeof v === 'bigint' ? v.toString() : v), space);
-
-// ─── Logger ──────────────────────────────────────────────────────────────────
-
-/** Structured logger — writes to stderr (MCP convention: stdout is for protocol) */
-function log(tool: string, level: 'info' | 'error' | 'debug', message: string, data?: unknown): void {
-  const ts = new Date().toISOString();
-  const prefix = `${ts} [${tool}] ${level.toUpperCase()}:`;
-  if (data !== undefined) {
-    console.error(prefix, message, typeof data === 'string' ? data : jsonStringify(data));
-  } else {
-    console.error(prefix, message);
-  }
-}
-
-// ─── Soroban error parser ────────────────────────────────────────────────────
-
-/** Common Soroban host error codes → human-readable descriptions */
-const SOROBAN_ERROR_HINTS: Record<string, string> = {
-  'Error(Storage, ExistingValue)': 'An entry with this key already exists (e.g. contract deployed with same salt)',
-  'Error(Auth, InvalidAction)': 'Authorization failed — the signer does not have permission for this action',
-  'Error(Budget, Exceeded)': 'Transaction budget exceeded — the operation is too expensive',
-  'Error(Value, InvalidInput)': 'Invalid input value — check parameter types and ranges',
-  'Error(Object, MissingValue)': 'Required value not found — a referenced entry does not exist',
-  'Error(WasmVm, Trapped)': 'Contract execution trapped — likely a panic or assertion failure in the contract',
-};
-
-/**
- * Parse Soroban simulation errors into structured, AI-friendly output.
- * Extracts human-readable reasons from diagnostic event logs.
- */
-function parseSorobanError(error: Error): {
-  error: string;
-  reason: string;
-  diagnosticEvents: string[];
-  hint?: string;
-  raw: string;
-} {
-  const msg = error.message;
-
-  // Extract the error code like Error(Storage, ExistingValue)
-  const codeMatch = msg.match(/Error\([A-Za-z]+,\s*[A-Za-z]+\)/);
-  const errorCode = codeMatch?.[0] ?? 'Unknown';
-
-  // Extract human-readable data strings from diagnostic events
-  const diagnosticEvents: string[] = [];
-  const dataMatches = msg.matchAll(/data:(?:"([^"]+)"|\[([^\]]+)\])/g);
-  for (const m of dataMatches) {
-    const text = m[1] ?? m[2];
-    if (text && !text.startsWith('escalating')) {
-      diagnosticEvents.push(text);
-    }
-  }
-
-  // Extract the escalation reason as a fallback
-  const escalationMatch = msg.match(/data:"(escalating[^"]+)"/);
-  if (escalationMatch) {
-    diagnosticEvents.push(escalationMatch[1]);
-  }
-
-  // Build a concise reason from the diagnostic events
-  const reason = diagnosticEvents[0] ?? `Soroban host error: ${errorCode}`;
-
-  return {
-    error: errorCode,
-    reason,
-    diagnosticEvents,
-    hint: SOROBAN_ERROR_HINTS[errorCode],
-    raw: msg,
-  };
-}
-
-/** Format any tool error into a structured MCP error response */
-function formatToolError(toolName: string, error: unknown): {
-  content: Array<{ type: 'text'; text: string }>;
-  isError: true;
-} {
-  const err = error instanceof Error ? error : new Error(String(error));
-  const isSorobanError = err.message.includes('HostError:') || err.message.includes('SimulationFailed');
-
-  let body: Record<string, unknown>;
-  if (isSorobanError) {
-    body = parseSorobanError(err);
-  } else {
-    body = {
-      error: 'Tool execution failed',
-      reason: err.message,
-    };
-  }
-
-  log(toolName, 'error', body.reason as string);
-  return {
-    content: [{ type: 'text', text: jsonStringify(body, 2) }],
-    isError: true,
-  };
-}
 
 // ─── Server factory ───────────────────────────────────────────────────────────
 //

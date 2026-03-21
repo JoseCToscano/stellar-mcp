@@ -66,10 +66,10 @@ fn test_output_schema_raw_shape_void() {
 
 #[test]
 fn test_output_schema_raw_shape_address() {
-    // Address return → both xdr and simulationResult (string, optional)
+    // Address return → both xdr and simulationResult (z.unknown() to handle SDK type wrapping)
     let shape = output_schema_raw_shape(&Some(TypeRef::Address));
     assert!(shape.contains("xdr: z.string()"), "missing xdr field: {}", shape);
     assert!(shape.contains("simulationResult:"), "missing simulationResult: {}", shape);
-    assert!(shape.contains("z.string()"), "wrong simulationResult type: {}", shape);
+    assert!(shape.contains("z.unknown()"), "simulationResult should use z.unknown(): {}", shape);
     assert!(shape.contains(".optional()"), "simulationResult should be optional: {}", shape);
 }
