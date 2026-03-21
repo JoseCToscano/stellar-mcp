@@ -33,9 +33,9 @@ fn test_to_pascal_case() {
 
 #[test]
 fn test_output_zod_for_type_address() {
-    // Address → z.string().length(56) (no schemas. prefix needed for primitives)
+    // Address → z.string() (no schemas. prefix needed for primitives)
     let result = output_zod_for_type(&TypeRef::Address);
-    assert_eq!(result, "z.string().length(56)");
+    assert_eq!(result, "z.string()");
 }
 
 #[test]
@@ -66,10 +66,10 @@ fn test_output_schema_raw_shape_void() {
 
 #[test]
 fn test_output_schema_raw_shape_address() {
-    // Address return → both xdr and simulationResult (nullable address)
+    // Address return → both xdr and simulationResult (string, optional)
     let shape = output_schema_raw_shape(&Some(TypeRef::Address));
     assert!(shape.contains("xdr: z.string()"), "missing xdr field: {}", shape);
     assert!(shape.contains("simulationResult:"), "missing simulationResult: {}", shape);
-    assert!(shape.contains("z.string().length(56)"), "wrong simulationResult type: {}", shape);
+    assert!(shape.contains("z.string()"), "wrong simulationResult type: {}", shape);
     assert!(shape.contains(".optional()"), "simulationResult should be optional: {}", shape);
 }
