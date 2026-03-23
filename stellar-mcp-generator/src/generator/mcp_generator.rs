@@ -31,13 +31,16 @@ pub fn output_zod_for_type(type_ref: &TypeRef) -> String {
 /// Build the Zod raw shape string for the `outputSchema` of a generated tool.
 /// Returns a JS object literal (not wrapped in `z.object()`) to satisfy
 /// `ZodRawShapeCompat` required by `server.registerTool()`.
+///
+/// NOTE: `simulationResult` uses `z.unknown()` because the Stellar SDK's
+/// `assembled.result` can return wrapped types (Result variants, Address
+/// objects, etc.) whose runtime shape doesn't always match the unwrapped
+/// Clarity type.  Using `z.unknown()` prevents MCP output validation errors
+/// while still providing the XDR schema.
 pub fn output_schema_raw_shape(output: &Option<TypeRef>) -> String {
     match output {
         None | Some(TypeRef::Void) => "{ xdr: z.string() }".to_string(),
-        Some(t) => format!(
-            "{{ xdr: z.string(), simulationResult: {}.optional() }}",
-            output_zod_for_type(t)
-        ),
+        Some(_) => "{ xdr: z.string(), simulationResult: z.unknown().optional() }".to_string(),
     }
 }
 
@@ -205,6 +208,8 @@ impl<'a> McpGenerator<'a> {
         content.push_str("import { submitTransaction } from './lib/submit.js';\n");
         content.push_str("import { prepareTransactionForWallet, signTransaction } from './lib/utils.js';\n");
         content.push_str("import { signAndSendWithPasskey } from './lib/passkey.js';\n");
+        content.push_str("import { log, jsonStringify } from './lib/logger.js';\n");
+        content.push_str("import { formatToolError } from './lib/errors.js';\n");
         content.push_str("\n");
 
         // Server configuration
@@ -214,12 +219,9 @@ impl<'a> McpGenerator<'a> {
         content.push_str(&format!("const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || '{}';\n", self.network.network_passphrase));
         content.push_str("\n");
 
-        // BigInt serialization helper
-        content.push_str("// Helper to serialize BigInt values (Soroban uses i128/u128 which become BigInt in JS)\n");
-        content.push_str("const jsonStringify = (obj: unknown, space?: number): string => {\n");
-        content.push_str("  return JSON.stringify(obj, (_, value) =>\n");
-        content.push_str("    typeof value === 'bigint' ? value.toString() : value, space);\n");
-        content.push_str("};\n\n");
+        // jsonStringify and log are imported from ./lib/logger.js
+        // formatToolError is imported from ./lib/errors.js
+
 
         // Factory function to create MCP server instance
         content.push_str("// Factory function to create and configure an MCP server instance\n");
@@ -283,6 +285,7 @@ impl<'a> McpGenerator<'a> {
 
             // Handler
             content.push_str("  async (params) => {\n");
+            content.push_str(&format!("    log('{}', 'info', 'called', params);\n", func.name_kebab));
             content.push_str("    try {\n");
             content.push_str(&format!(
                 "      const result = await tools.{}(params, {{\n",
@@ -292,6 +295,7 @@ impl<'a> McpGenerator<'a> {
             content.push_str("        rpcUrl: RPC_URL,\n");
             content.push_str("        networkPassphrase: NETWORK_PASSPHRASE,\n");
             content.push_str("      });\n");
+            content.push_str(&format!("      log('{}', 'info', 'success', result);\n", func.name_kebab));
             content.push_str("\n");
             content.push_str("      return {\n");
             content.push_str("        content: [{\n");
@@ -301,15 +305,7 @@ impl<'a> McpGenerator<'a> {
             content.push_str("        structuredContent: JSON.parse(jsonStringify(result)),\n");
             content.push_str("      };\n");
             content.push_str("    } catch (error) {\n");
-            content.push_str("      return {\n");
-            content.push_str("        content: [{\n");
-            content.push_str("          type: 'text',\n");
-            content.push_str("          text: jsonStringify({\n");
-            content.push_str("            error: 'Tool execution failed',\n");
-            content.push_str("            message: error instanceof Error ? error.message : 'Unknown error',\n");
-            content.push_str("          }),\n");
-            content.push_str("        }],\n");
-            content.push_str("      };\n");
+            content.push_str(&format!("      return formatToolError('{}', error);\n", func.name_kebab));
             content.push_str("    }\n");
             content.push_str("  }\n");
             content.push_str(");\n\n");
@@ -329,6 +325,7 @@ impl<'a> McpGenerator<'a> {
         content.push_str("    outputSchema: { success: z.boolean(), result: z.unknown().optional() },\n");
         content.push_str("  },\n");
         content.push_str("  async ({ xdr, secretKey, walletContractId }) => {\n");
+        content.push_str("    log('sign-and-submit', 'info', 'called');\n");
         content.push_str("    try {\n");
 
         // Always validate secretKey first
@@ -341,6 +338,7 @@ impl<'a> McpGenerator<'a> {
         content.push_str("      if (walletContractId) {\n");
         content.push_str("        // Passkey signing uses WALLET_SIGNER_SECRET from env for auth, secretKey as fee payer\n");
         content.push_str("        const result = await signAndSendWithPasskey(xdr, walletContractId, secretKey);\n");
+        content.push_str("        log('sign-and-submit', 'info', 'success (passkey)', result);\n");
         content.push_str("        const payload = { success: true, result };\n");
         content.push_str("        return {\n");
         content.push_str("          content: [{\n");
@@ -355,6 +353,7 @@ impl<'a> McpGenerator<'a> {
         content.push_str("      // Regular signing: signAuthEntries + sign envelope + submit\n");
         content.push_str("      const signedXdr = await signTransaction(xdr, secretKey);\n");
         content.push_str("      const result = await submitTransaction(signedXdr);\n");
+        content.push_str("      log('sign-and-submit', 'info', 'success', result);\n");
         content.push_str("      const payload = { success: true, result };\n");
         content.push_str("      return {\n");
         content.push_str("        content: [{\n");
@@ -364,14 +363,7 @@ impl<'a> McpGenerator<'a> {
         content.push_str("        structuredContent: payload,\n");
         content.push_str("      };\n");
         content.push_str("    } catch (error) {\n");
-        content.push_str("      const errMsg = error instanceof Error ? error.message : 'Unknown error';\n");
-        content.push_str("      return {\n");
-        content.push_str("        content: [{\n");
-        content.push_str("          type: 'text',\n");
-        content.push_str("          text: jsonStringify({ error: 'Submission failed', message: errMsg }),\n");
-        content.push_str("        }],\n");
-        content.push_str("        structuredContent: { success: false, result: errMsg },\n");
-        content.push_str("      };\n");
+        content.push_str("      return formatToolError('sign-and-submit', error);\n");
         content.push_str("    }\n");
         content.push_str("  }\n");
         content.push_str(");\n\n");
@@ -392,8 +384,10 @@ impl<'a> McpGenerator<'a> {
         content.push_str("    outputSchema: { walletReadyXdr: z.string(), preview: z.record(z.string(), z.unknown()) },\n");
         content.push_str("  },\n");
         content.push_str("  async ({ xdr, walletAddress, toolName, params, simulationResult }) => {\n");
+        content.push_str("    log('prepare-transaction', 'info', 'called', { walletAddress });\n");
         content.push_str("    try {\n");
         content.push_str("      const result = await prepareTransactionForWallet(xdr, walletAddress);\n");
+        content.push_str("      log('prepare-transaction', 'info', 'success');\n");
         content.push_str("      const payload = {\n");
         content.push_str("        walletReadyXdr: result.walletReadyXdr,\n");
         content.push_str("        preview: {\n");
@@ -411,14 +405,7 @@ impl<'a> McpGenerator<'a> {
         content.push_str("        structuredContent: payload,\n");
         content.push_str("      };\n");
         content.push_str("    } catch (error) {\n");
-        content.push_str("      const errMsg = error instanceof Error ? error.message : 'Unknown error';\n");
-        content.push_str("      return {\n");
-        content.push_str("        content: [{\n");
-        content.push_str("          type: 'text',\n");
-        content.push_str("          text: jsonStringify({ error: 'Transaction preparation failed', message: errMsg }),\n");
-        content.push_str("        }],\n");
-        content.push_str("        structuredContent: { walletReadyXdr: '', preview: { error: errMsg } },\n");
-        content.push_str("      };\n");
+        content.push_str("      return formatToolError('prepare-transaction', error);\n");
         content.push_str("    }\n");
         content.push_str("  }\n");
         content.push_str(");\n\n");
@@ -441,6 +428,7 @@ impl<'a> McpGenerator<'a> {
         content.push_str("    outputSchema: { readyForSigning: z.literal(true), xdr: z.string(), preview: z.record(z.string(), z.unknown()) },\n");
         content.push_str("  },\n");
         content.push_str("  async ({ xdr, toolName, params, simulationResult }) => {\n");
+        content.push_str("    log('prepare-sign-and-submit', 'info', 'called', { toolName });\n");
         content.push_str("    try {\n");
         content.push_str("      // Simply return the XDR and metadata for the frontend to display\n");
         content.push_str("      // No actual signing happens here - that's done by sign-and-submit\n");
@@ -454,6 +442,7 @@ impl<'a> McpGenerator<'a> {
         content.push_str("          network: NETWORK_PASSPHRASE,\n");
         content.push_str("        },\n");
         content.push_str("      };\n");
+        content.push_str("      log('prepare-sign-and-submit', 'info', 'success');\n");
         content.push_str("      return {\n");
         content.push_str("        content: [{\n");
         content.push_str("          type: 'text',\n");
@@ -462,14 +451,7 @@ impl<'a> McpGenerator<'a> {
         content.push_str("        structuredContent: payload,\n");
         content.push_str("      };\n");
         content.push_str("    } catch (error) {\n");
-        content.push_str("      const errMsg = error instanceof Error ? error.message : 'Unknown error';\n");
-        content.push_str("      return {\n");
-        content.push_str("        content: [{\n");
-        content.push_str("          type: 'text',\n");
-        content.push_str("          text: jsonStringify({ error: 'Transaction preparation failed', message: errMsg }),\n");
-        content.push_str("        }],\n");
-        content.push_str("        structuredContent: { readyForSigning: true as const, xdr: '', preview: { error: errMsg } },\n");
-        content.push_str("      };\n");
+        content.push_str("      return formatToolError('prepare-sign-and-submit', error);\n");
         content.push_str("    }\n");
         content.push_str("  }\n");
         content.push_str(");\n");
@@ -859,6 +841,114 @@ impl<'a> McpGenerator<'a> {
     // Custom type generation removed - using official Stellar bindings instead
 
     fn generate_lib_files(&self, _args: &GenerateArgs) -> Result<(), Box<dyn std::error::Error>> {
+        // Logger utility — structured logging to stderr (MCP convention)
+        let logger_content = r#"// Structured logger — writes to stderr (MCP convention: stdout is for protocol)
+
+/** Serialize BigInt values — Soroban uses i128/u128 which become BigInt in JS */
+export const jsonStringify = (obj: unknown, space?: number): string =>
+  JSON.stringify(obj, (_, v) => (typeof v === 'bigint' ? v.toString() : v), space);
+
+/** Structured logger — writes to stderr with ISO timestamps */
+export function log(tool: string, level: 'info' | 'error' | 'debug', message: string, data?: unknown): void {
+  const ts = new Date().toISOString();
+  const prefix = `${ts} [${tool}] ${level.toUpperCase()}:`;
+  if (data !== undefined) {
+    console.error(prefix, message, typeof data === 'string' ? data : jsonStringify(data));
+  } else {
+    console.error(prefix, message);
+  }
+}
+"#;
+        fs::write(self.output_dir.join("src/lib/logger.ts"), logger_content)?;
+        println!("  Generated src/lib/logger.ts");
+
+        // Error parsing utility — Soroban-specific error parsing + formatToolError
+        let errors_content = r#"// Soroban error parsing and MCP error formatting
+import { log, jsonStringify } from './logger.js';
+
+/** Common Soroban host error codes → human-readable descriptions */
+const SOROBAN_ERROR_HINTS: Record<string, string> = {
+  'Error(Storage, ExistingValue)': 'An entry with this key already exists (e.g. contract deployed with same salt)',
+  'Error(Auth, InvalidAction)': 'Authorization failed — the signer does not have permission for this action',
+  'Error(Budget, Exceeded)': 'Transaction budget exceeded — the operation is too expensive',
+  'Error(Value, InvalidInput)': 'Invalid input value — check parameter types and ranges',
+  'Error(Object, MissingValue)': 'Required value not found — a referenced entry does not exist',
+  'Error(WasmVm, Trapped)': 'Contract execution trapped — likely a panic or assertion failure in the contract',
+};
+
+/**
+ * Parse Soroban simulation errors into structured, AI-friendly output.
+ * Extracts human-readable reasons from diagnostic event logs.
+ */
+function parseSorobanError(error: Error): {
+  error: string;
+  reason: string;
+  diagnosticEvents: string[];
+  hint?: string;
+  raw: string;
+} {
+  const msg = error.message;
+
+  // Extract the error code like Error(Storage, ExistingValue)
+  const codeMatch = msg.match(/Error\([A-Za-z]+,\s*[A-Za-z]+\)/);
+  const errorCode = codeMatch?.[0] ?? 'Unknown';
+
+  // Extract human-readable data strings from diagnostic events
+  const diagnosticEvents: string[] = [];
+  const dataMatches = msg.matchAll(/data:(?:"([^"]+)"|\[([^\]]+)\])/g);
+  for (const m of dataMatches) {
+    const text = m[1] ?? m[2];
+    if (text && !text.startsWith('escalating')) {
+      diagnosticEvents.push(text);
+    }
+  }
+
+  // Extract the escalation reason as a fallback
+  const escalationMatch = msg.match(/data:"(escalating[^"]+)"/);
+  if (escalationMatch) {
+    diagnosticEvents.push(escalationMatch[1]);
+  }
+
+  // Build a concise reason from the diagnostic events
+  const reason = diagnosticEvents[0] ?? `Soroban host error: ${errorCode}`;
+
+  return {
+    error: errorCode,
+    reason,
+    diagnosticEvents,
+    hint: SOROBAN_ERROR_HINTS[errorCode],
+    raw: msg,
+  };
+}
+
+/** Format any tool error into a structured MCP error response */
+export function formatToolError(toolName: string, error: unknown): {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: true;
+} {
+  const err = error instanceof Error ? error : new Error(String(error));
+  const isSorobanError = err.message.includes('HostError:') || err.message.includes('SimulationFailed');
+
+  let body: Record<string, unknown>;
+  if (isSorobanError) {
+    body = parseSorobanError(err);
+  } else {
+    body = {
+      error: 'Tool execution failed',
+      reason: err.message,
+    };
+  }
+
+  log(toolName, 'error', body.reason as string);
+  return {
+    content: [{ type: 'text', text: jsonStringify(body, 2) }],
+    isError: true,
+  };
+}
+"#;
+        fs::write(self.output_dir.join("src/lib/errors.ts"), errors_content)?;
+        println!("  Generated src/lib/errors.ts");
+
         // Transaction utility
         let tx_content = r#"// Transaction utilities
 import { xdr, scValToNative } from '@stellar/stellar-sdk';

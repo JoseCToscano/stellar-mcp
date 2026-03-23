@@ -17,7 +17,7 @@ fn test_type_ref_to_zod() {
     assert_eq!(TypeRef::Bool.to_zod(), "z.boolean()");
     assert_eq!(TypeRef::U32.to_zod(), "z.number()");
     assert_eq!(TypeRef::String.to_zod(), "z.string()");
-    assert_eq!(TypeRef::Address.to_zod(), "z.string().length(56)");
+    assert_eq!(TypeRef::Address.to_zod(), "z.string()");
 }
 
 #[test]

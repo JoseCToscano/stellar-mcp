@@ -152,7 +152,7 @@ impl TypeRef {
             }
             TypeRef::Bytes => "z.string()".to_string(), // Base64 encoded
             TypeRef::String | TypeRef::Symbol => "z.string()".to_string(),
-            TypeRef::Address => "z.string().length(56)".to_string(),
+            TypeRef::Address => "z.string()".to_string(),
             TypeRef::Option(inner) => format!("{}.nullable()", inner.to_zod()),
             TypeRef::Result { ok, .. } => ok.to_zod(),
             TypeRef::Vec(inner) => format!("z.array({})", inner.to_zod()),

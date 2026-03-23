@@ -6,6 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx scripts/dev.ts",
+    "build": "tsc",
+    "start": "node dist/scripts/dev.js",
     "setup": "tsx scripts/setup.ts",
     "typecheck": "tsc --noEmit"
   },
