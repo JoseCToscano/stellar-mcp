@@ -13,7 +13,7 @@ import {
 import { basicNodeSigner } from '@stellar/stellar-sdk/contract';
 import {
   createSACClient,
-  submitToLaunchtube,
+  submitToRelayer,
   readTxtResource,
   readMarkdownResource,
   passkeyServer,
@@ -240,11 +240,10 @@ server.tool(
       }
 
       if (isReadCall) {
-        const res = await submitToLaunchtube(result.toXDR());
-        const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-        const parsedResult = scValToNative(
-          meta.v3().sorobanMeta()!.returnValue()
-        );
+        const res = await submitToRelayer(result.toXDR());
+        const rpcServer = new rpc.Server(process.env.RPC_URL || 'https://soroban-testnet.stellar.org');
+        const confirmed = await rpcServer.pollTransaction(res.hash ?? res.transactionId ?? '', { sleepStrategy: () => 500 }) as rpc.Api.GetSuccessfulTransactionResponse;
+        const parsedResult = scValToNative(confirmed.resultMetaXdr.v3().sorobanMeta()!.returnValue());
         return {
           content: [
             { type: 'text', text: 'Transaction sent successfully!' },
@@ -262,10 +261,9 @@ server.tool(
         const signedTx = await passkeyWallet.sign(transactionXdr, { keypair });
         try {
           const res = await passkeyServer.send(signedTx);
-          const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-          const parsedResult = scValToNative(
-            meta.v3().sorobanMeta()!.returnValue()
-          );
+          const rpcServer = new rpc.Server(process.env.RPC_URL || 'https://soroban-testnet.stellar.org');
+          const confirmed = await rpcServer.pollTransaction(res.hash ?? res.transactionId ?? '', { sleepStrategy: () => 500 }) as rpc.Api.GetSuccessfulTransactionResponse;
+          const parsedResult = scValToNative(confirmed.resultMetaXdr.v3().sorobanMeta()!.returnValue());
           return {
             content: [
               { type: 'text', text: 'Transaction sent successfully!' },
@@ -319,12 +317,10 @@ server.tool(
         ).signTransaction,
       });
 
-      // Send through Launchtube
-      const res = await submitToLaunchtube(result.toXDR());
-      const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-      const parsedResult = scValToNative(
-        meta.v3().sorobanMeta()!.returnValue()
-      );
+      const res = await submitToRelayer(result.toXDR());
+      const rpcServer = new rpc.Server(process.env.RPC_URL || 'https://soroban-testnet.stellar.org');
+      const confirmed = await rpcServer.pollTransaction(res.hash ?? res.transactionId ?? '', { sleepStrategy: () => 500 }) as rpc.Api.GetSuccessfulTransactionResponse;
+      const parsedResult = scValToNative(confirmed.resultMetaXdr.v3().sorobanMeta()!.returnValue());
       return {
         content: [
           { type: 'text', text: 'Transaction sent successfully!' },
@@ -361,11 +357,10 @@ server.tool(
   { xdr: z.string().describe('The signed XDR transaction to submit') },
   async ({ xdr }) => {
     try {
-      const res = await submitToLaunchtube(xdr);
-      const meta = res.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-      const parsedResult = scValToNative(
-        meta.v3().sorobanMeta()!.returnValue()
-      );
+      const res = await submitToRelayer(xdr);
+      const rpcServer = new rpc.Server(process.env.RPC_URL || 'https://soroban-testnet.stellar.org');
+      const confirmed = await rpcServer.pollTransaction(res.hash ?? res.transactionId ?? '', { sleepStrategy: () => 500 }) as rpc.Api.GetSuccessfulTransactionResponse;
+      const parsedResult = scValToNative(confirmed.resultMetaXdr.v3().sorobanMeta()!.returnValue());
       return {
         content: [
           { type: 'text', text: 'Transaction submitted successfully!' },

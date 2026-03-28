@@ -13,7 +13,7 @@ import {
   getPasskeyWallet,
   passkeyServer,
   shouldSignWithWalletSigner,
-  submitToLaunchtube,
+  submitToRelayer,
 } from './utils.js';
 
 dotenv.config();
@@ -92,10 +92,10 @@ async function main() {
     console.log('signedTx', signedTx);
     try {
       const res = await passkeyServer.send(signedTx);
-      const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-      const parsedResult = scValToNative(
-        meta.v3().sorobanMeta()!.returnValue()
-      );
+      console.log('submitted, hash:', res.hash ?? res.transactionId);
+      const rpcServer2 = new rpc.Server(process.env.RPC_URL || 'https://soroban-testnet.stellar.org');
+      const confirmed = await rpcServer2.pollTransaction(res.hash ?? res.transactionId ?? '', { sleepStrategy: () => 500 }) as rpc.Api.GetSuccessfulTransactionResponse;
+      const parsedResult = scValToNative(confirmed.resultMetaXdr.v3().sorobanMeta()!.returnValue());
       console.log('parsedResult', parsedResult);
     } catch (e) {
       if (e.error.includes('Error(Auth, InvalidAction)')) {
@@ -129,10 +129,11 @@ async function main() {
     force: true,
   });
 
-  // Send through Launchtube
-  const res = await submitToLaunchtube(result.toXDR());
-  const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-  const parsedResult = scValToNative(meta.v3().sorobanMeta()!.returnValue());
+  const res = await submitToRelayer(result.toXDR());
+  console.log('submitted, hash:', res.hash ?? res.transactionId);
+  const rpcServer = new rpc.Server(process.env.RPC_URL || 'https://soroban-testnet.stellar.org');
+  const confirmed = await rpcServer.pollTransaction(res.hash ?? res.transactionId ?? '', { sleepStrategy: () => 500 }) as rpc.Api.GetSuccessfulTransactionResponse;
+  const parsedResult = scValToNative(confirmed.resultMetaXdr.v3().sorobanMeta()!.returnValue());
   console.log('parsedResult', parsedResult);
 }
 

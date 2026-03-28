@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { Client as SacClient } from 'sac-sdk';
 import { PasskeyKit, PasskeyServer, PasskeyClient } from 'passkey-kit';
+import { ChannelsClient } from '@openzeppelin/relayer-plugin-channels';
 import dotenv from 'dotenv';
 import { contract } from '@stellar/stellar-sdk/minimal';
 
@@ -31,8 +32,8 @@ export const getPasskeyWallet = (walletContractId: string) => {
 
 export const passkeyServer = new PasskeyServer({
   rpcUrl: process.env.RPC_URL,
-  launchtubeUrl: process.env.LAUNCHTUBE_URL,
-  launchtubeJwt: process.env.LAUNCHTUBE_JWT,
+  relayerUrl: process.env.RELAYER_URL,
+  relayerApiKey: process.env.RELAYER_API_KEY,
   mercuryProjectName: process.env.MERCURY_PROJECT_NAME,
   mercuryUrl: process.env.MERCURY_URL,
   mercuryJwt: process.env.MERCURY_JWT,
@@ -108,29 +109,14 @@ export const readTxtResource: ReadResourceCallback = async (
   };
 };
 
-export const submitToLaunchtube = async (xdrTx: string, fee?: number) => {
-  if (!process.env.LAUNCHTUBE_URL)
-    throw new Error('Launchtube service not configured');
-
-  const data = new FormData();
-
-  data.set('xdr', xdrTx);
-
-  if (fee) data.set('fee', fee.toString());
-  const launchtubeHeaders = {
-    'X-Client-Name': 'passkey-kit',
-    'X-Client-Version': '0.10.19',
-    Authorization: `Bearer ${process.env.LAUNCHTUBE_JWT}`,
-  };
-
-  return fetch(process.env.LAUNCHTUBE_URL, {
-    method: 'POST',
-    headers: launchtubeHeaders,
-    body: data,
-  }).then(async (res) => {
-    if (res.ok) return res.json();
-    else throw await res.json();
-  });
+export const submitToRelayer = async (xdrTx: string): Promise<{ hash: string | null; transactionId: string | null; status: string | null }> => {
+  const relayerUrl = process.env.RELAYER_URL;
+  const relayerApiKey = process.env.RELAYER_API_KEY;
+  if (!relayerUrl || !relayerApiKey) {
+    throw new Error('RELAYER_URL and RELAYER_API_KEY environment variables are required');
+  }
+  const client = new ChannelsClient({ baseUrl: relayerUrl, apiKey: relayerApiKey });
+  return client.submitTransaction({ xdr: xdrTx });
 };
 
 export const createContractClient = async (
