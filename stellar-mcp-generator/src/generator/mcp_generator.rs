@@ -984,8 +984,8 @@ export function parseTransactionResult(resultMetaXdr: string): any {
 "#;
         fs::write(self.output_dir.join("src/lib/transaction.ts"), tx_content)?;
 
-        // Always generate submit.ts (simple transaction submission)
-        let submit_content = r#"// Transaction submission using Stellar SDK
+        // Always generate submit.ts (transaction submission with optional OZ Relayer)
+        let submit_content = r#"// Transaction submission — uses OZ Relayer when configured, falls back to direct RPC
 import {
   TransactionBuilder,
   rpc,
@@ -994,6 +994,8 @@ import {
 
 const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015';
 const RPC_URL = process.env.RPC_URL || 'https://soroban-testnet.stellar.org';
+const RELAYER_URL = process.env.RELAYER_URL;
+const RELAYER_API_KEY = process.env.RELAYER_API_KEY;
 
 export interface SubmitResult {
   hash: string;
@@ -1002,11 +1004,22 @@ export interface SubmitResult {
   resultMetaXdr?: string;
 }
 
+// Lazy-loaded ChannelsClient (only imported when relayer is configured)
+let _relayerClient: any = null;
+async function getRelayerClient() {
+  if (!_relayerClient) {
+    const { ChannelsClient } = await import('@openzeppelin/relayer-plugin-channels');
+    _relayerClient = new ChannelsClient({ baseUrl: RELAYER_URL!, apiKey: RELAYER_API_KEY! });
+  }
+  return _relayerClient;
+}
+
 /**
- * Submit a signed transaction to the Stellar network
+ * Submit a signed transaction to the Stellar network.
  *
- * NOTE: This function expects the transaction to already be signed!
- * Use this after signing with signAuthEntries + sign in the MCP tool.
+ * When RELAYER_URL and RELAYER_API_KEY env vars are set, submits via
+ * the OpenZeppelin Relayer (fee sponsorship). Otherwise submits directly
+ * via the Stellar RPC.
  *
  * @param signedXdr - Signed transaction XDR
  * @returns Submission result with hash and parsed response
@@ -1016,22 +1029,32 @@ export async function submitTransaction(
 ): Promise<SubmitResult> {
   const server = new rpc.Server(RPC_URL, { allowHttp: true });
 
-  // Parse the signed transaction
-  const tx = TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE);
+  let txHash: string;
 
-  // Submit to network
-  const response = await server.sendTransaction(tx);
+  if (RELAYER_URL && RELAYER_API_KEY) {
+    // Submit via OZ Relayer (fee sponsorship)
+    const client = await getRelayerClient();
+    const relayerRes = await client.submitTransaction({ xdr: signedXdr });
+    const id = relayerRes.hash ?? relayerRes.transactionId;
+    if (!id) throw new Error('Relayer returned no transaction identifier');
+    txHash = id;
+  } else {
+    // Submit directly via Stellar RPC
+    const tx = TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE);
+    const response = await server.sendTransaction(tx);
 
-  if (response.status !== 'PENDING') {
-    const errorMessage =
-      (response as any).errorResult?.toXDR?.('base64') ||
-      (response as any).errorResultXdr ||
-      JSON.stringify(response);
-    throw new Error(`Transaction failed: ${response.status} - ${errorMessage}`);
+    if (response.status !== 'PENDING') {
+      const errorMessage =
+        (response as any).errorResult?.toXDR?.('base64') ||
+        (response as any).errorResultXdr ||
+        JSON.stringify(response);
+      throw new Error(`Transaction failed: ${response.status} - ${errorMessage}`);
+    }
+    txHash = response.hash;
   }
 
   // Poll for result using SDK's pollTransaction
-  const txResult = await server.pollTransaction(response.hash, {
+  const txResult = await server.pollTransaction(txHash, {
     sleepStrategy: () => 500,
     attempts: 60, // 30 seconds total
   });
@@ -1065,7 +1088,7 @@ export async function submitTransaction(
   }
 
   return {
-    hash: response.hash,
+    hash: txHash,
     status: txResult.status,
     parsedResult,
     resultMetaXdr: resultMetaXdrString,
