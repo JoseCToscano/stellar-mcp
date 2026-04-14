@@ -92,10 +92,13 @@ async function main() {
     console.log('signedTx', signedTx);
     try {
       const res = await passkeyServer.send(signedTx);
-      console.log('submitted, hash:', res.hash ?? res.transactionId);
+      const txId = res.hash ?? res.transactionId;
+      console.log('submitted, hash:', txId);
+      if (!txId) throw new Error('Relayer returned no transaction identifier');
       const rpcServer2 = new rpc.Server(process.env.RPC_URL || 'https://soroban-testnet.stellar.org');
-      const confirmed = await rpcServer2.pollTransaction(res.hash ?? res.transactionId ?? '', { sleepStrategy: () => 500 }) as rpc.Api.GetSuccessfulTransactionResponse;
-      const parsedResult = scValToNative(confirmed.resultMetaXdr.v3().sorobanMeta()!.returnValue());
+      const confirmed = await rpcServer2.pollTransaction(txId, { sleepStrategy: () => 500, attempts: 60 });
+      if (confirmed.status !== 'SUCCESS') throw new Error(`Transaction ${confirmed.status}: ${txId}`);
+      const parsedResult = scValToNative((confirmed as rpc.Api.GetSuccessfulTransactionResponse).resultMetaXdr.v3().sorobanMeta()!.returnValue());
       console.log('parsedResult', parsedResult);
     } catch (e) {
       if (e.error.includes('Error(Auth, InvalidAction)')) {
@@ -130,10 +133,13 @@ async function main() {
   });
 
   const res = await submitToRelayer(result.toXDR());
-  console.log('submitted, hash:', res.hash ?? res.transactionId);
+  const txId = res.hash ?? res.transactionId;
+  console.log('submitted, hash:', txId);
+  if (!txId) throw new Error('Relayer returned no transaction identifier');
   const rpcServer = new rpc.Server(process.env.RPC_URL || 'https://soroban-testnet.stellar.org');
-  const confirmed = await rpcServer.pollTransaction(res.hash ?? res.transactionId ?? '', { sleepStrategy: () => 500 }) as rpc.Api.GetSuccessfulTransactionResponse;
-  const parsedResult = scValToNative(confirmed.resultMetaXdr.v3().sorobanMeta()!.returnValue());
+  const confirmed = await rpcServer.pollTransaction(txId, { sleepStrategy: () => 500, attempts: 60 });
+  if (confirmed.status !== 'SUCCESS') throw new Error(`Transaction ${confirmed.status}: ${txId}`);
+  const parsedResult = scValToNative((confirmed as rpc.Api.GetSuccessfulTransactionResponse).resultMetaXdr.v3().sorobanMeta()!.returnValue());
   console.log('parsedResult', parsedResult);
 }
 

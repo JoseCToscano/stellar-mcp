@@ -17,14 +17,22 @@ interface RelayerResult {
   [key: string]: unknown;
 }
 
+// Lazy singleton — created once on first use
+let _client: ChannelsClient | null = null;
+function getClient(): ChannelsClient {
+  if (!_client) {
+    if (!RELAYER_API_KEY) {
+      throw new Error('RELAYER_API_KEY environment variable is required');
+    }
+    _client = new ChannelsClient({ baseUrl: RELAYER_URL, apiKey: RELAYER_API_KEY });
+  }
+  return _client;
+}
+
 export async function submitToRelayer(
   xdrTx: string,
   options: SubmitOptions = {}
 ): Promise<RelayerResult> {
-  if (!RELAYER_API_KEY) {
-    throw new Error('RELAYER_API_KEY environment variable is required');
-  }
-
   let signedXdr = xdrTx;
 
   if (options.secretKey) {
@@ -34,6 +42,5 @@ export async function submitToRelayer(
     signedXdr = transaction.toXDR();
   }
 
-  const client = new ChannelsClient({ baseUrl: RELAYER_URL, apiKey: RELAYER_API_KEY });
-  return client.submitTransaction({ xdr: signedXdr }) as Promise<RelayerResult>;
+  return getClient().submitTransaction({ xdr: signedXdr }) as Promise<RelayerResult>;
 }

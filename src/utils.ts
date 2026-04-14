@@ -109,14 +109,22 @@ export const readTxtResource: ReadResourceCallback = async (
   };
 };
 
-export const submitToRelayer = async (xdrTx: string): Promise<{ hash: string | null; transactionId: string | null; status: string | null }> => {
-  const relayerUrl = process.env.RELAYER_URL;
-  const relayerApiKey = process.env.RELAYER_API_KEY;
-  if (!relayerUrl || !relayerApiKey) {
-    throw new Error('RELAYER_URL and RELAYER_API_KEY environment variables are required');
+let _channelsClient: ChannelsClient | null = null;
+
+function getChannelsClient(): ChannelsClient {
+  if (!_channelsClient) {
+    const relayerUrl = process.env.RELAYER_URL;
+    const relayerApiKey = process.env.RELAYER_API_KEY;
+    if (!relayerUrl || !relayerApiKey) {
+      throw new Error('RELAYER_URL and RELAYER_API_KEY environment variables are required');
+    }
+    _channelsClient = new ChannelsClient({ baseUrl: relayerUrl, apiKey: relayerApiKey });
   }
-  const client = new ChannelsClient({ baseUrl: relayerUrl, apiKey: relayerApiKey });
-  return client.submitTransaction({ xdr: xdrTx });
+  return _channelsClient;
+}
+
+export const submitToRelayer = async (xdrTx: string): Promise<{ hash: string | null; transactionId: string | null; status: string | null }> => {
+  return getChannelsClient().submitTransaction({ xdr: xdrTx });
 };
 
 export const createContractClient = async (
