@@ -1440,28 +1440,17 @@ export async function signAndSendWithPasskey(
     .assembleTransaction(rebuiltTx, simResponse)
     .build();
 
-  // Step 7: Sign envelope with fee payer and submit
+  // Step 7: Sign envelope with fee payer
   assembledRebuilt.sign(feePayerKeypair);
-  const response = await server.sendTransaction(assembledRebuilt);
 
-  if (response.status !== 'PENDING') {
-    const errorMessage =
-      (response as any).errorResult?.toXDR?.('base64') ||
-      (response as any).errorResultXdr ||
-      JSON.stringify(response);
-    throw new Error(`Transaction failed: ${response.status} - ${errorMessage}`);
-  }
-
-  // Step 8: Poll for result
-  const txResult = await server.pollTransaction(response.hash, {
-    sleepStrategy: () => 500,
-    attempts: 60,
-  });
+  // Step 8: Submit via submitTransaction (uses relayer when configured)
+  const { submitTransaction } = await import('./submit.js');
+  const result = await submitTransaction(assembledRebuilt.toXDR());
 
   return {
-    hash: response.hash,
-    status: txResult.status,
-    parsedResult: txResult.status === 'SUCCESS' ? txResult : undefined,
+    hash: result.hash,
+    status: result.status,
+    parsedResult: result.parsedResult,
   };
 }
 "#;
@@ -1478,6 +1467,7 @@ export async function signAndSendWithPasskey(
             "@stellar/stellar-sdk": "~14.4.0",
             "zod": "^3.23.0",
             "dotenv": "^16.4.0",
+            "@openzeppelin/relayer-plugin-channels": "^0.18.0",
             "passkey-kit": "^0.12.0",
             "passkey-kit-sdk": "^0.7.2",
             "express": "^4.18.2",
