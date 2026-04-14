@@ -5,8 +5,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import * as tools from './tools/{{contract_name}}.js';
-{{#if with_launchtube}}
-import { submitToLaunchtube } from './lib/launchtube.js';
+{{#if with_relayer}}
+import { submitToRelayer } from './lib/relayer.js';
 {{/if}}
 {{#if with_passkey}}
 import { signAndSendWithPasskey } from './lib/passkey.js';
@@ -91,8 +91,8 @@ function createServer(): McpServer {
         }
         {{/if}}
 
-        {{#if with_launchtube}}
-        const result = await submitToLaunchtube(xdr, { secretKey });
+        {{#if with_relayer}}
+        const result = await submitToRelayer(xdr, { secretKey });
         {{else}}
         const signedXdr = await signTransaction(xdr, secretKey);
         const result = await submitTransaction(signedXdr);

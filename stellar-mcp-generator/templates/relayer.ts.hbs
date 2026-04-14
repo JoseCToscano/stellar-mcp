@@ -1,0 +1,46 @@
+// OZ Relayer integration for {{contract_name}}
+import { ChannelsClient } from '@openzeppelin/relayer-plugin-channels';
+import { Keypair, TransactionBuilder } from '@stellar/stellar-sdk';
+
+const RELAYER_URL = process.env.RELAYER_URL || 'https://channels.openzeppelin.com/testnet';
+const RELAYER_API_KEY = process.env.RELAYER_API_KEY;
+const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || '{{network_passphrase}}';
+
+export interface SubmitOptions {
+  secretKey?: string;
+}
+
+interface RelayerResult {
+  hash?: string | null;
+  transactionId?: string | null;
+  status?: string | null;
+  [key: string]: unknown;
+}
+
+// Lazy singleton — created once on first use
+let _client: ChannelsClient | null = null;
+function getClient(): ChannelsClient {
+  if (!_client) {
+    if (!RELAYER_API_KEY) {
+      throw new Error('RELAYER_API_KEY environment variable is required');
+    }
+    _client = new ChannelsClient({ baseUrl: RELAYER_URL, apiKey: RELAYER_API_KEY });
+  }
+  return _client;
+}
+
+export async function submitToRelayer(
+  xdrTx: string,
+  options: SubmitOptions = {}
+): Promise<RelayerResult> {
+  let signedXdr = xdrTx;
+
+  if (options.secretKey) {
+    const keypair = Keypair.fromSecret(options.secretKey);
+    const transaction = TransactionBuilder.fromXDR(xdrTx, NETWORK_PASSPHRASE);
+    transaction.sign(keypair);
+    signedXdr = transaction.toXDR();
+  }
+
+  return getClient().submitTransaction({ xdr: signedXdr }) as Promise<RelayerResult>;
+}

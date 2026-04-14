@@ -13,13 +13,43 @@ import {
 import { basicNodeSigner } from '@stellar/stellar-sdk/contract';
 import {
   createSACClient,
-  submitToLaunchtube,
+  submitToRelayer,
   readTxtResource,
   readMarkdownResource,
   passkeyServer,
   shouldSignWithWalletSigner,
   getPasskeyWallet,
 } from './utils.js';
+
+// Shared RPC server instance (avoids repeated instantiation per request)
+const rpcServer = new rpc.Server(
+  process.env.RPC_URL || 'https://soroban-testnet.stellar.org',
+  { allowHttp: true }
+);
+
+/**
+ * Poll for transaction confirmation and parse the return value.
+ * Guards against missing tx IDs, adds an attempts cap, and checks status.
+ */
+async function pollAndParseResult(
+  res: { hash?: string | null; transactionId?: string | null }
+): Promise<unknown> {
+  const txId = res.hash ?? res.transactionId;
+  if (!txId) throw new Error('Relayer returned no transaction identifier');
+  const confirmed = await rpcServer.pollTransaction(txId, {
+    sleepStrategy: () => 500,
+    attempts: 60,
+  });
+  if (confirmed.status !== 'SUCCESS') {
+    throw new Error(
+      `Transaction ${confirmed.status === 'FAILED' ? 'failed on-chain' : 'not found'} (${txId})`
+    );
+  }
+  return scValToNative(
+    (confirmed as rpc.Api.GetSuccessfulTransactionResponse)
+      .resultMetaXdr.v3().sorobanMeta()!.returnValue()
+  );
+}
 
 // Create server instance
 const server = new McpServer({
@@ -240,11 +270,8 @@ server.tool(
       }
 
       if (isReadCall) {
-        const res = await submitToLaunchtube(result.toXDR());
-        const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-        const parsedResult = scValToNative(
-          meta.v3().sorobanMeta()!.returnValue()
-        );
+        const res = await submitToRelayer(result.toXDR());
+        const parsedResult = await pollAndParseResult(res);
         return {
           content: [
             { type: 'text', text: 'Transaction sent successfully!' },
@@ -262,10 +289,7 @@ server.tool(
         const signedTx = await passkeyWallet.sign(transactionXdr, { keypair });
         try {
           const res = await passkeyServer.send(signedTx);
-          const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-          const parsedResult = scValToNative(
-            meta.v3().sorobanMeta()!.returnValue()
-          );
+          const parsedResult = await pollAndParseResult(res);
           return {
             content: [
               { type: 'text', text: 'Transaction sent successfully!' },
@@ -294,9 +318,7 @@ server.tool(
         }
       }
       // Signing with a regular Stellar wallet
-      const server = new rpc.Server(process.env.RPC_URL!, { allowHttp: true });
-
-      const ledgerSeq = (await server.getLatestLedger()).sequence;
+      const ledgerSeq = (await rpcServer.getLatestLedger()).sequence;
       const validUntilLedger = ledgerSeq + 100;
 
       await result.signAuthEntries({
@@ -319,12 +341,8 @@ server.tool(
         ).signTransaction,
       });
 
-      // Send through Launchtube
-      const res = await submitToLaunchtube(result.toXDR());
-      const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-      const parsedResult = scValToNative(
-        meta.v3().sorobanMeta()!.returnValue()
-      );
+      const res = await submitToRelayer(result.toXDR());
+      const parsedResult = await pollAndParseResult(res);
       return {
         content: [
           { type: 'text', text: 'Transaction sent successfully!' },
@@ -361,11 +379,8 @@ server.tool(
   { xdr: z.string().describe('The signed XDR transaction to submit') },
   async ({ xdr }) => {
     try {
-      const res = await submitToLaunchtube(xdr);
-      const meta = res.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-      const parsedResult = scValToNative(
-        meta.v3().sorobanMeta()!.returnValue()
-      );
+      const res = await submitToRelayer(xdr);
+      const parsedResult = await pollAndParseResult(res);
       return {
         content: [
           { type: 'text', text: 'Transaction submitted successfully!' },

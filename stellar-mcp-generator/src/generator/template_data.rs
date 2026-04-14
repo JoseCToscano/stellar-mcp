@@ -11,7 +11,7 @@ pub struct IndexTemplateData {
     pub rpc_url: String,
     pub network_passphrase: String,
     pub functions: Vec<FunctionTemplateData>,
-    pub with_launchtube: bool,
+    pub with_relayer: bool,
     pub with_passkey: bool,
 }
 
@@ -92,7 +92,7 @@ pub struct PackageJsonData {
     pub name: String,
     pub description: String,
     pub version: String,
-    pub with_launchtube: bool,
+    pub with_relayer: bool,
     pub with_passkey: bool,
 }
 
@@ -102,7 +102,7 @@ pub struct EnvExampleData {
     pub contract_id: String,
     pub rpc_url: String,
     pub network_passphrase: String,
-    pub with_launchtube: bool,
+    pub with_relayer: bool,
     pub with_passkey: bool,
 }
 
@@ -114,7 +114,7 @@ pub struct ReadmeTemplateData {
     pub contract_name: String,
     pub network_name: String,
     pub functions: Vec<FunctionDocData>,
-    pub with_launchtube: bool,
+    pub with_relayer: bool,
     pub with_passkey: bool,
 }
 

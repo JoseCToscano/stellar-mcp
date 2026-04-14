@@ -90,6 +90,7 @@ impl<'a> McpGenerator<'a> {
         self.generate_lib_files(args)?;
         self.generate_deploy_wallet(args)?;
         self.generate_package_json(args)?;
+        self.generate_build_ts()?;
         self.generate_tsconfig()?;
         self.generate_env_example(args)?;
         self.generate_dockerfile()?;
@@ -607,7 +608,7 @@ impl<'a> McpGenerator<'a> {
         let mut content = String::new();
 
         content.push_str("// Generated tool handlers using official Stellar bindings\n");
-        content.push_str("import { rpc } from '@stellar/stellar-sdk';\n");
+        content.push_str("import { rpc, Address } from '@stellar/stellar-sdk';\n");
         content.push_str("import { Client } from '../bindings/dist/index.js';\n");
         content.push_str("import type * as ContractTypes from '../bindings/dist/index.js';\n");
         content.push_str("\n");
@@ -662,6 +663,21 @@ impl<'a> McpGenerator<'a> {
         content.push_str("    }\n");
         content.push_str("  }\n");
         content.push_str("  return result;\n");
+        content.push_str("}\n\n");
+
+        // toJsonSafe: converts Address objects and BigInt to JSON-safe primitives
+        content.push_str("// Recursively convert SDK types (Address, BigInt) to JSON-safe primitives\n");
+        content.push_str("function toJsonSafe(value: any): any {\n");
+        content.push_str("  if (value == null) return value;\n");
+        content.push_str("  if (value instanceof Address) return value.toString();\n");
+        content.push_str("  if (typeof value === 'bigint') return value.toString();\n");
+        content.push_str("  if (Array.isArray(value)) return value.map(toJsonSafe);\n");
+        content.push_str("  if (typeof value === 'object') {\n");
+        content.push_str("    const out: Record<string, any> = {};\n");
+        content.push_str("    for (const [k, v] of Object.entries(value)) { out[k] = toJsonSafe(v); }\n");
+        content.push_str("    return out;\n");
+        content.push_str("  }\n");
+        content.push_str("  return value;\n");
         content.push_str("}\n\n");
 
         // Generate typed functions that use the official Client
@@ -745,7 +761,7 @@ impl<'a> McpGenerator<'a> {
             content.push_str("  // assembled.result contains the simulated result\n");
             content.push_str("  return {\n");
             content.push_str("    xdr: assembled.built!.toXDR(),\n");
-            content.push_str("    simulationResult: assembled.result,\n");
+            content.push_str("    simulationResult: toJsonSafe(assembled.result),\n");
             content.push_str("  };\n");
             content.push_str("}\n\n");
         }
@@ -968,8 +984,8 @@ export function parseTransactionResult(resultMetaXdr: string): any {
 "#;
         fs::write(self.output_dir.join("src/lib/transaction.ts"), tx_content)?;
 
-        // Always generate submit.ts (simple transaction submission)
-        let submit_content = r#"// Transaction submission using Stellar SDK
+        // Always generate submit.ts (transaction submission with optional OZ Relayer)
+        let submit_content = r#"// Transaction submission — uses OZ Relayer when configured, falls back to direct RPC
 import {
   TransactionBuilder,
   rpc,
@@ -978,6 +994,8 @@ import {
 
 const NETWORK_PASSPHRASE = process.env.NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015';
 const RPC_URL = process.env.RPC_URL || 'https://soroban-testnet.stellar.org';
+const RELAYER_URL = process.env.RELAYER_URL;
+const RELAYER_API_KEY = process.env.RELAYER_API_KEY;
 
 export interface SubmitResult {
   hash: string;
@@ -986,11 +1004,22 @@ export interface SubmitResult {
   resultMetaXdr?: string;
 }
 
+// Lazy-loaded ChannelsClient (only imported when relayer is configured)
+let _relayerClient: any = null;
+async function getRelayerClient() {
+  if (!_relayerClient) {
+    const { ChannelsClient } = await import('@openzeppelin/relayer-plugin-channels');
+    _relayerClient = new ChannelsClient({ baseUrl: RELAYER_URL!, apiKey: RELAYER_API_KEY! });
+  }
+  return _relayerClient;
+}
+
 /**
- * Submit a signed transaction to the Stellar network
+ * Submit a signed transaction to the Stellar network.
  *
- * NOTE: This function expects the transaction to already be signed!
- * Use this after signing with signAuthEntries + sign in the MCP tool.
+ * When RELAYER_URL and RELAYER_API_KEY env vars are set, submits via
+ * the OpenZeppelin Relayer (fee sponsorship). Otherwise submits directly
+ * via the Stellar RPC.
  *
  * @param signedXdr - Signed transaction XDR
  * @returns Submission result with hash and parsed response
@@ -1000,22 +1029,32 @@ export async function submitTransaction(
 ): Promise<SubmitResult> {
   const server = new rpc.Server(RPC_URL, { allowHttp: true });
 
-  // Parse the signed transaction
-  const tx = TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE);
+  let txHash: string;
 
-  // Submit to network
-  const response = await server.sendTransaction(tx);
+  if (RELAYER_URL && RELAYER_API_KEY) {
+    // Submit via OZ Relayer (fee sponsorship)
+    const client = await getRelayerClient();
+    const relayerRes = await client.submitTransaction({ xdr: signedXdr });
+    const id = relayerRes.hash ?? relayerRes.transactionId;
+    if (!id) throw new Error('Relayer returned no transaction identifier');
+    txHash = id;
+  } else {
+    // Submit directly via Stellar RPC
+    const tx = TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE);
+    const response = await server.sendTransaction(tx);
 
-  if (response.status !== 'PENDING') {
-    const errorMessage =
-      (response as any).errorResult?.toXDR?.('base64') ||
-      (response as any).errorResultXdr ||
-      JSON.stringify(response);
-    throw new Error(`Transaction failed: ${response.status} - ${errorMessage}`);
+    if (response.status !== 'PENDING') {
+      const errorMessage =
+        (response as any).errorResult?.toXDR?.('base64') ||
+        (response as any).errorResultXdr ||
+        JSON.stringify(response);
+      throw new Error(`Transaction failed: ${response.status} - ${errorMessage}`);
+    }
+    txHash = response.hash;
   }
 
   // Poll for result using SDK's pollTransaction
-  const txResult = await server.pollTransaction(response.hash, {
+  const txResult = await server.pollTransaction(txHash, {
     sleepStrategy: () => 500,
     attempts: 60, // 30 seconds total
   });
@@ -1049,7 +1088,7 @@ export async function submitTransaction(
   }
 
   return {
-    hash: response.hash,
+    hash: txHash,
     status: txResult.status,
     parsedResult,
     resultMetaXdr: resultMetaXdrString,
@@ -1401,28 +1440,17 @@ export async function signAndSendWithPasskey(
     .assembleTransaction(rebuiltTx, simResponse)
     .build();
 
-  // Step 7: Sign envelope with fee payer and submit
+  // Step 7: Sign envelope with fee payer
   assembledRebuilt.sign(feePayerKeypair);
-  const response = await server.sendTransaction(assembledRebuilt);
 
-  if (response.status !== 'PENDING') {
-    const errorMessage =
-      (response as any).errorResult?.toXDR?.('base64') ||
-      (response as any).errorResultXdr ||
-      JSON.stringify(response);
-    throw new Error(`Transaction failed: ${response.status} - ${errorMessage}`);
-  }
-
-  // Step 8: Poll for result
-  const txResult = await server.pollTransaction(response.hash, {
-    sleepStrategy: () => 500,
-    attempts: 60,
-  });
+  // Step 8: Submit via submitTransaction (uses relayer when configured)
+  const { submitTransaction } = await import('./submit.js');
+  const result = await submitTransaction(assembledRebuilt.toXDR());
 
   return {
-    hash: response.hash,
-    status: txResult.status,
-    parsedResult: txResult.status === 'SUCCESS' ? txResult : undefined,
+    hash: result.hash,
+    status: result.status,
+    parsedResult: result.parsedResult,
   };
 }
 "#;
@@ -1439,7 +1467,8 @@ export async function signAndSendWithPasskey(
             "@stellar/stellar-sdk": "~14.4.0",
             "zod": "^3.23.0",
             "dotenv": "^16.4.0",
-            "passkey-kit": "^0.10.19",
+            "@openzeppelin/relayer-plugin-channels": "^0.18.0",
+            "passkey-kit": "^0.12.0",
             "passkey-kit-sdk": "^0.7.2",
             "express": "^4.18.2",
             "cors": "^2.8.5"
@@ -1447,13 +1476,16 @@ export async function signAndSendWithPasskey(
 
         let scripts = serde_json::json!({
             "build:bindings": "cd src/bindings && pnpm install && pnpm build",
-            "build:server": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/sdk --external:@stellar/stellar-sdk --external:zod --external:dotenv --external:express --external:cors --banner:js=\"#!/usr/bin/env node\"",
-            "build": "pnpm run build:bindings && pnpm run build:server",
+            "build": "pnpm run build:bindings && tsx build.ts",
             "start": "node dist/index.js",
             "start:http": "USE_HTTP=true PORT=3000 node dist/index.js",
             "dev": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --external:@modelcontextprotocol/sdk --external:@stellar/stellar-sdk --external:zod --external:dotenv --external:express --external:cors --banner:js=\"#!/usr/bin/env node\" --watch",
             "deploy-passkey": "tsx deploy-wallet.ts",
-            "typecheck": "tsc --noEmit"
+            "typecheck": "tsc --noEmit",
+            "test": "vitest run",
+            "test:watch": "vitest",
+            "test:unit": "vitest run src/__tests__/logger.test.ts src/__tests__/errors.test.ts src/__tests__/toJsonSafe.test.ts",
+            "test:http": "vitest run src/__tests__/http-server.test.ts"
         });
 
         let dev_deps = serde_json::json!({
@@ -1462,7 +1494,8 @@ export async function signAndSendWithPasskey(
             "@types/cors": "^2.8.13",
             "typescript": "^5.5.0",
             "esbuild": "^0.24.0",
-            "tsx": "^4.19.0"
+            "tsx": "^4.19.0",
+            "vitest": "^4.1.2"
         });
 
         let package_json = serde_json::json!({
@@ -1479,6 +1512,10 @@ export async function signAndSendWithPasskey(
             "devDependencies": dev_deps,
             "engines": {
                 "node": ">=20"
+            },
+            "vitest": {
+                "environment": "node",
+                "globals": true
             }
         });
 
@@ -1486,6 +1523,91 @@ export async function signAndSendWithPasskey(
         fs::write(self.output_dir.join("package.json"), content)?;
 
         println!("  Generated package.json");
+        Ok(())
+    }
+
+    fn generate_build_ts(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut content = String::new();
+        content.push_str("import * as esbuild from 'esbuild';\n");
+        content.push_str("import { readFile } from 'fs/promises';\n");
+        content.push_str("import { resolve } from 'path';\n");
+        content.push_str("\n");
+        content.push_str("/**\n");
+        content.push_str(" * Two-phase build for the generated MCP server.\n");
+        content.push_str(" *\n");
+        content.push_str(" * Phase 1 — pre-bundle passkey-kit as CJS.\n");
+        content.push_str(" *   passkey-kit ^0.12.0 ships TypeScript source and depends on\n");
+        content.push_str(" *   @openzeppelin/relayer-plugin-channels (CJS) which uses dynamic\n");
+        content.push_str(" *   require() calls inside function bodies that esbuild cannot\n");
+        content.push_str(" *   statically analyse in ESM context. Pre-bundling as CJS resolves them.\n");
+        content.push_str(" *\n");
+        content.push_str(" * Phase 2 — bundle the main server as ESM.\n");
+        content.push_str(" *   Redirect passkey-kit imports to the pre-bundled CJS file via plugin.\n");
+        content.push_str(" *   Add createRequire banner so esbuild's __require shim can fall back\n");
+        content.push_str(" *   to Node's real require() for any remaining dynamic CJS requires.\n");
+        content.push_str(" */\n");
+        content.push_str("async function build() {\n");
+        content.push_str("  // Phase 1: pre-bundle passkey-kit as CJS\n");
+        content.push_str("  const passkeyKitSrc = await readFile(\n");
+        content.push_str("    resolve('./node_modules/passkey-kit/src/index.ts'),\n");
+        content.push_str("    'utf8'\n");
+        content.push_str("  );\n");
+        content.push_str("\n");
+        content.push_str("  await esbuild.build({\n");
+        content.push_str("    stdin: {\n");
+        content.push_str("      contents: passkeyKitSrc,\n");
+        content.push_str("      loader: 'ts',\n");
+        content.push_str("      resolveDir: resolve('./node_modules/passkey-kit/src'),\n");
+        content.push_str("    },\n");
+        content.push_str("    bundle: true,\n");
+        content.push_str("    outfile: './dist/passkey-kit-bundle.cjs',\n");
+        content.push_str("    format: 'cjs',\n");
+        content.push_str("    platform: 'node',\n");
+        content.push_str("    target: 'node20',\n");
+        content.push_str("    external: ['@stellar/stellar-sdk'],\n");
+        content.push_str("  });\n");
+        content.push_str("\n");
+        content.push_str("  // Phase 2: main server bundle\n");
+        content.push_str("  await esbuild.build({\n");
+        content.push_str("    entryPoints: ['src/index.ts'],\n");
+        content.push_str("    bundle: true,\n");
+        content.push_str("    outfile: './dist/index.js',\n");
+        content.push_str("    format: 'esm',\n");
+        content.push_str("    platform: 'node',\n");
+        content.push_str("    target: 'node20',\n");
+        content.push_str("    external: [\n");
+        content.push_str("      '@modelcontextprotocol/sdk',\n");
+        content.push_str("      '@stellar/stellar-sdk',\n");
+        content.push_str("      'zod',\n");
+        content.push_str("      'dotenv',\n");
+        content.push_str("      'express',\n");
+        content.push_str("      'cors',\n");
+        content.push_str("    ],\n");
+        content.push_str("    banner: {\n");
+        content.push_str("      js: '#!/usr/bin/env node\\nimport { createRequire } from \"module\";\\nconst require = createRequire(import.meta.url);',\n");
+        content.push_str("    },\n");
+        content.push_str("    plugins: [\n");
+        content.push_str("      {\n");
+        content.push_str("        name: 'resolve-passkey-kit',\n");
+        content.push_str("        setup(build) {\n");
+        content.push_str("          build.onResolve({ filter: /^passkey-kit$/ }, () => ({\n");
+        content.push_str("            path: resolve('./dist/passkey-kit-bundle.cjs'),\n");
+        content.push_str("          }));\n");
+        content.push_str("        },\n");
+        content.push_str("      },\n");
+        content.push_str("    ],\n");
+        content.push_str("  });\n");
+        content.push_str("\n");
+        content.push_str("  console.log('Build completed successfully!');\n");
+        content.push_str("}\n");
+        content.push_str("\n");
+        content.push_str("build().catch((err) => {\n");
+        content.push_str("  console.error('Build failed:', err);\n");
+        content.push_str("  process.exit(1);\n");
+        content.push_str("});\n");
+
+        fs::write(self.output_dir.join("build.ts"), content)?;
+        println!("  Generated build.ts");
         Ok(())
     }
 
@@ -1540,6 +1662,10 @@ export async function signAndSendWithPasskey(
         content.push_str("\n");
         content.push_str("# CORS (comma-separated origins, or * for all — HTTP mode only)\n");
         content.push_str("# CORS_ORIGINS=https://myapp.example.com,https://staging.example.com\n");
+        content.push_str("\n");
+        content.push_str("# OpenZeppelin Relayer (fee sponsorship)\n");
+        content.push_str("# RELAYER_URL=https://channels.openzeppelin.com/testnet\n");
+        content.push_str("# RELAYER_API_KEY=your-api-key  # get from channels.openzeppelin.com/testnet/gen\n");
 
         fs::write(self.output_dir.join(".env.example"), content)?;
 

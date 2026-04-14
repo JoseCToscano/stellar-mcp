@@ -13,7 +13,7 @@ A [Stellar CLI plugin](https://developers.stellar.org/docs/tools/cli/plugins) th
 - Call any contract function as an MCP tool
 - Understand contract types and parameters
 - Build and simulate transactions
-- Sign and submit transactions via LaunchTube or PasskeyKit
+- Sign and submit transactions via OpenZeppelin Relayer or PasskeyKit
 
 ---
 
@@ -105,7 +105,7 @@ pnpm install
 
 # 3. Configure environment
 cp .env.example .env
-# Edit .env with your credentials (LAUNCHTUBE_JWT, etc.)
+# Edit .env with your credentials (RELAYER_API_KEY, etc.)
 
 # 4. Build and run
 pnpm run build
@@ -321,9 +321,9 @@ stellar contract build --meta name=my-token
 
 All inputs are validated using Zod schemas generated from the contract spec.
 
-### LaunchTube Integration
+### OpenZeppelin Relayer Integration
 
-Submit transactions with fee sponsorship via LaunchTube.
+Submit transactions with fee sponsorship via the [OpenZeppelin Relayer](https://docs.openzeppelin.com/relayer/1.4.x/stellar).
 
 ### PasskeyKit Support
 

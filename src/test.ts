@@ -13,7 +13,7 @@ import {
   getPasskeyWallet,
   passkeyServer,
   shouldSignWithWalletSigner,
-  submitToLaunchtube,
+  submitToRelayer,
 } from './utils.js';
 
 dotenv.config();
@@ -92,10 +92,13 @@ async function main() {
     console.log('signedTx', signedTx);
     try {
       const res = await passkeyServer.send(signedTx);
-      const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-      const parsedResult = scValToNative(
-        meta.v3().sorobanMeta()!.returnValue()
-      );
+      const txId = res.hash ?? res.transactionId;
+      console.log('submitted, hash:', txId);
+      if (!txId) throw new Error('Relayer returned no transaction identifier');
+      const rpcServer2 = new rpc.Server(process.env.RPC_URL || 'https://soroban-testnet.stellar.org');
+      const confirmed = await rpcServer2.pollTransaction(txId, { sleepStrategy: () => 500, attempts: 60 });
+      if (confirmed.status !== 'SUCCESS') throw new Error(`Transaction ${confirmed.status}: ${txId}`);
+      const parsedResult = scValToNative((confirmed as rpc.Api.GetSuccessfulTransactionResponse).resultMetaXdr.v3().sorobanMeta()!.returnValue());
       console.log('parsedResult', parsedResult);
     } catch (e) {
       if (e.error.includes('Error(Auth, InvalidAction)')) {
@@ -129,10 +132,14 @@ async function main() {
     force: true,
   });
 
-  // Send through Launchtube
-  const res = await submitToLaunchtube(result.toXDR());
-  const meta = xdr.TransactionMeta.fromXDR(res.resultMetaXdr, 'base64');
-  const parsedResult = scValToNative(meta.v3().sorobanMeta()!.returnValue());
+  const res = await submitToRelayer(result.toXDR());
+  const txId = res.hash ?? res.transactionId;
+  console.log('submitted, hash:', txId);
+  if (!txId) throw new Error('Relayer returned no transaction identifier');
+  const rpcServer = new rpc.Server(process.env.RPC_URL || 'https://soroban-testnet.stellar.org');
+  const confirmed = await rpcServer.pollTransaction(txId, { sleepStrategy: () => 500, attempts: 60 });
+  if (confirmed.status !== 'SUCCESS') throw new Error(`Transaction ${confirmed.status}: ${txId}`);
+  const parsedResult = scValToNative((confirmed as rpc.Api.GetSuccessfulTransactionResponse).resultMetaXdr.v3().sorobanMeta()!.returnValue());
   console.log('parsedResult', parsedResult);
 }
 

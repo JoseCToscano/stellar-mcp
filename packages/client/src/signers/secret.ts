@@ -8,7 +8,7 @@ import { parseSubmitResponse } from './utils.js';
  *
  * The secret key is passed as a parameter to the server's `sign-and-submit` tool
  * at runtime — the server never stores it. The server handles auth entry signing,
- * envelope signing, fresh sequence numbers, and LaunchTube submission.
+ * envelope signing, fresh sequence numbers, and OpenZeppelin Relayer submission.
  *
  * @param secretKey - Stellar secret key (S...) for signing
  * @returns Signer adapter compatible with MCPClient.signAndSubmit()

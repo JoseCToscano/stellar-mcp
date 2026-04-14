@@ -19,7 +19,7 @@ impl<'a> TemplateRenderer<'a> {
         handlebars.register_template_string("tools", include_str!("../../templates/tools.ts.hbs"))?;
         handlebars.register_template_string("schemas", include_str!("../../templates/schemas.ts.hbs"))?;
         handlebars.register_template_string("types", include_str!("../../templates/types.ts.hbs"))?;
-        handlebars.register_template_string("launchtube", include_str!("../../templates/launchtube.ts.hbs"))?;
+        handlebars.register_template_string("relayer", include_str!("../../templates/relayer.ts.hbs"))?;
         handlebars.register_template_string("passkey", include_str!("../../templates/passkey.ts.hbs"))?;
         handlebars.register_template_string("transaction", include_str!("../../templates/transaction.ts.hbs"))?;
         handlebars.register_template_string("package_json", include_str!("../../templates/package.json.hbs"))?;
@@ -46,7 +46,7 @@ pub struct IndexData {
     pub rpc_url: String,
     pub network_passphrase: String,
     pub functions: Vec<FunctionData>,
-    pub with_launchtube: bool,
+    pub with_relayer: bool,
     pub with_passkey: bool,
 }
 
