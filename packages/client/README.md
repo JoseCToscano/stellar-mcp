@@ -418,7 +418,7 @@ Signers are pluggable adapters that implement the `Signer` interface. Pass one t
 
 ### `secretKeySigner(secretKey)` — Node.js & server-side
 
-Delegates signing and submission to the MCP server's built-in `sign-and-submit` tool. The server handles auth entry signing, fresh sequence numbers, and LaunchTube submission. The secret key is passed per-request and never stored.
+Delegates signing and submission to the MCP server's built-in `sign-and-submit` tool. The server handles auth entry signing, fresh sequence numbers, and OpenZeppelin Relayer submission. The secret key is passed per-request and never stored.
 
 > **Security note:** `secretKeySigner` transmits the secret key to the MCP server's `sign-and-submit` tool. Only use this with trusted, local, or TLS-secured servers. For untrusted servers, prefer `connectFreighter()` which signs client-side.
 

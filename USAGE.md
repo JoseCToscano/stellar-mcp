@@ -95,7 +95,7 @@ Process:
 Signs the Soroban auth entries
 Simulates the transaction
 Signs the full transaction
-Submits it to the network via Launchtube
+Submits it to the network via OpenZeppelin Relayer
 
 ✅ Recommended Usage Flow
 Read your keys from agent-keys.json
